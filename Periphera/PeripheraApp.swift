@@ -43,9 +43,10 @@ private struct MenuBarStatusIcon: View {
             Image(
                 systemName: !isTrusted
                     ? "exclamationmark.shield"
-                    : (isEnabled ? "computermouse.fill" : "computermouse")
+                    : "slider.horizontal.2.square"
             )
             .symbolRenderingMode(.hierarchical)
+            .opacity(isEnabled ? 1.0 : 0.45)
         }
     }
 }

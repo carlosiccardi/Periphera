@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="Periphera/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="88" height="88" alt="Periphera Icon" />
+  <img src="docs/app-icon-v3.png" width="88" height="88" alt="Periphera Icon" />
   <h1>Periphera</h1>
   <p><strong>Independent scroll direction for Trackpad & Mouse + External Display brightness control on macOS.</strong></p>
 
@@ -21,8 +21,8 @@
       <td align="center"><strong>Interactive <code>(i)</code> Simulator</strong></td>
     </tr>
     <tr>
-      <td valign="top"><img src="docs/preview-minimal-v2.png" width="340" alt="Periphera Minimal UI" /></td>
-      <td valign="top"><img src="docs/preview-simulator-v2.png" width="340" alt="Periphera Interactive Simulator" /></td>
+      <td valign="top"><img src="docs/preview-minimal-v3.png" width="340" alt="Periphera Minimal UI" /></td>
+      <td valign="top"><img src="docs/preview-simulator-v3.png" width="340" alt="Periphera Interactive Simulator" /></td>
     </tr>
   </table>
 </div>

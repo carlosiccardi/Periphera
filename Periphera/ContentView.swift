@@ -80,8 +80,8 @@ struct ContentView: View {
     // MARK: - Compact Header
     private var headerBar: some View {
         HStack(spacing: 9) {
-            Image(systemName: "computermouse.fill")
-                .font(.system(size: 13, weight: .semibold))
+            Image(systemName: "slider.horizontal.2.square")
+                .font(.system(size: 13.5, weight: .semibold))
                 .foregroundStyle(engine.isEnabled ? .primary : .tertiary)
                 .frame(width: 26, height: 26)
                 .background(
