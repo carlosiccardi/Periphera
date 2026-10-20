@@ -25,28 +25,38 @@ struct PeripheraApp: App {
         MenuBarExtra {
             ContentView(engine: engine, displayManager: displayManager)
         } label: {
-            MenuBarStatusIcon(
-                isEnabled: engine.isEnabled,
-                isTrusted: engine.isAccessibilityGranted
+            Image(
+                nsImage: Self.makeMenuBarIcon(
+                    isEnabled: engine.isEnabled,
+                    isTrusted: engine.isAccessibilityGranted
+                )
             )
         }
         .menuBarExtraStyle(.window)
     }
-}
 
-private struct MenuBarStatusIcon: View {
-    let isEnabled: Bool
-    let isTrusted: Bool
+    private static func makeMenuBarIcon(isEnabled: Bool, isTrusted: Bool) -> NSImage {
+        let symbolName = !isTrusted
+            ? "exclamationmark.shield"
+            : "slider.horizontal.2.square"
 
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(
-                systemName: !isTrusted
-                    ? "exclamationmark.shield"
-                    : "slider.horizontal.2.square"
-            )
-            .symbolRenderingMode(.hierarchical)
-            .opacity(isEnabled ? 1.0 : 0.45)
+        let config = NSImage.SymbolConfiguration(pointSize: 16.5, weight: .medium, scale: .large)
+        guard let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Periphera")?
+            .withSymbolConfiguration(config) else {
+            return NSImage()
+        }
+
+        if isEnabled {
+            baseImage.isTemplate = true
+            return baseImage
+        } else {
+            let size = baseImage.size
+            let dimmed = NSImage(size: size, flipped: false) { rect in
+                baseImage.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 0.45)
+                return true
+            }
+            dimmed.isTemplate = true
+            return dimmed
         }
     }
 }
