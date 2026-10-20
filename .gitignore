@@ -1,0 +1,5 @@
+.DS_Store
+*.dmg
+xcuserdata/
+build_dmg_staging/
+DerivedData/
