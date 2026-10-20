@@ -10,7 +10,7 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var engine: ScrollEngine
     @Bindable var displayManager: DisplayManager
-    @State private var showSpeedTuning: Bool = false
+    @State private var showMouseSpeedTuning: Bool = false
     @State private var showTrackpadPreview: Bool = false
     @State private var showMousePreview: Bool = false
 
@@ -48,18 +48,17 @@ struct ContentView: View {
                     isActiveNow: engine.lastActiveDevice == .mouse && engine.activityPulse,
                     isNatural: $engine.mouseNatural,
                     showInfoPreview: $showMousePreview,
-                    isEnabled: engine.isEnabled
-                )
+                    isEnabled: engine.isEnabled,
+                    showSettingsToggle: true,
+                    isSettingsExpanded: $showMouseSpeedTuning
+                ) {
+                    mouseTuningSection
+                }
 
                 MinimalDisplayRow(
                     displayManager: displayManager,
                     isIT: isIT
                 )
-            }
-
-            if showSpeedTuning {
-                speedBar
-                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             Divider()
@@ -70,7 +69,7 @@ struct ContentView: View {
         .padding(14)
         .frame(width: 288)
         .animation(.snappy(duration: 0.22), value: engine.isEnabled)
-        .animation(.snappy(duration: 0.22), value: showSpeedTuning)
+        .animation(.snappy(duration: 0.22), value: showMouseSpeedTuning)
         .animation(.snappy(duration: 0.22), value: showTrackpadPreview)
         .animation(.snappy(duration: 0.22), value: showMousePreview)
         .animation(.snappy(duration: 0.22), value: engine.isAccessibilityGranted)
@@ -151,16 +150,16 @@ struct ContentView: View {
         )
     }
 
-    // MARK: - Compact Mouse Speed Row
-    private var speedBar: some View {
+    // MARK: - Inline Mouse Wheel Speed & Horizontal Tuning (inside Mouse Card)
+    private var mouseTuningSection: some View {
         VStack(spacing: 7) {
             HStack {
                 Text(isIT ? "Velocità rotella" : "Wheel speed")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(String(format: "%.1fx", engine.mouseSpeedMultiplier))
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.primary.opacity(0.8))
             }
 
@@ -172,15 +171,19 @@ struct ContentView: View {
                 isIT ? "Inverti anche scorrimento orizzontale" : "Also invert horizontal scroll",
                 isOn: $engine.invertMouseHorizontal
             )
-            .font(.system(size: 10.5))
+            .font(.system(size: 10))
             .foregroundStyle(.secondary)
             .toggleStyle(.checkbox)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(10)
+        .padding(9)
         .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Color.primary.opacity(0.035))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.6)
+                )
         )
     }
 
@@ -219,21 +222,6 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .help(isIT ? "Switch to English" : "Passa all'Italiano")
-
-            Button {
-                showSpeedTuning.toggle()
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(showSpeedTuning ? .primary : .secondary)
-                    .frame(width: 22, height: 20)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(Color.primary.opacity(showSpeedTuning ? 0.10 : 0.0))
-                    )
-            }
-            .buttonStyle(.plain)
-            .help(isIT ? "Opzioni mouse" : "Mouse options")
 
             Button(isIT ? "Esci" : "Quit") {
                 NSApplication.shared.terminate(nil)
@@ -310,8 +298,8 @@ private struct MinimalDisplayRow: View {
     }
 }
 
-// MARK: - Ultra-Clean Device Row with Expandable (i) Simulator
-private struct MinimalDeviceRow: View {
+// MARK: - Ultra-Clean Device Row with Expandable (i) Simulator & Optional Inline Settings
+private struct MinimalDeviceRow<ExtraContent: View>: View {
     let title: String
     let icon: String
     let deviceKind: InputDeviceType
@@ -322,6 +310,39 @@ private struct MinimalDeviceRow: View {
     @Binding var isNatural: Bool
     @Binding var showInfoPreview: Bool
     let isEnabled: Bool
+    let showSettingsToggle: Bool
+    @Binding var isSettingsExpanded: Bool
+    @ViewBuilder let extraContent: () -> ExtraContent
+
+    init(
+        title: String,
+        icon: String,
+        deviceKind: InputDeviceType,
+        naturalLabel: String,
+        classicLabel: String,
+        isIT: Bool,
+        isActiveNow: Bool,
+        isNatural: Binding<Bool>,
+        showInfoPreview: Binding<Bool>,
+        isEnabled: Bool,
+        showSettingsToggle: Bool = false,
+        isSettingsExpanded: Binding<Bool> = .constant(false),
+        @ViewBuilder extraContent: @escaping () -> ExtraContent = { EmptyView() }
+    ) {
+        self.title = title
+        self.icon = icon
+        self.deviceKind = deviceKind
+        self.naturalLabel = naturalLabel
+        self.classicLabel = classicLabel
+        self.isIT = isIT
+        self.isActiveNow = isActiveNow
+        self._isNatural = isNatural
+        self._showInfoPreview = showInfoPreview
+        self.isEnabled = isEnabled
+        self.showSettingsToggle = showSettingsToggle
+        self._isSettingsExpanded = isSettingsExpanded
+        self.extraContent = extraContent
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -343,6 +364,21 @@ private struct MinimalDeviceRow: View {
                 }
 
                 Spacer()
+
+                if showSettingsToggle {
+                    Button {
+                        withAnimation(.snappy(duration: 0.22)) {
+                            isSettingsExpanded.toggle()
+                        }
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 11.5, weight: .regular))
+                            .foregroundStyle(isSettingsExpanded ? .primary : .tertiary)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(isIT ? "Velocità e opzioni rotella" : "Wheel speed & options")
+                }
 
                 // Minimal "i" in a circle button
                 Button {
@@ -384,6 +420,11 @@ private struct MinimalDeviceRow: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.primary.opacity(0.05))
             )
+
+            if isSettingsExpanded {
+                extraContent()
+                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+            }
 
             // Expandable Simulated Trackpad / Mouse + Page Effect
             if showInfoPreview {
