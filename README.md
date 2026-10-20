@@ -21,8 +21,8 @@
       <td align="center"><strong>Interactive <code>(i)</code> Simulator</strong></td>
     </tr>
     <tr>
-      <td valign="top"><img src="docs/preview-minimal.png" width="340" alt="Periphera Minimal UI" /></td>
-      <td valign="top"><img src="docs/preview-simulator.png" width="340" alt="Periphera Interactive Simulator" /></td>
+      <td valign="top"><img src="docs/preview-minimal-en.png" width="340" alt="Periphera Minimal UI" /></td>
+      <td valign="top"><img src="docs/preview-simulator-en.png" width="340" alt="Periphera Interactive Simulator" /></td>
     </tr>
   </table>
 </div>
