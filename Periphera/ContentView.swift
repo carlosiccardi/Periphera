@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var engine: ScrollEngine
+    @Bindable var displayManager: DisplayManager
     @State private var showSpeedTuning: Bool = false
     @State private var showTrackpadPreview: Bool = false
     @State private var showMousePreview: Bool = false
@@ -48,6 +49,11 @@ struct ContentView: View {
                     isNatural: $engine.mouseNatural,
                     showInfoPreview: $showMousePreview,
                     isEnabled: engine.isEnabled
+                )
+
+                MinimalDisplayRow(
+                    displayManager: displayManager,
+                    isIT: isIT
                 )
             }
 
@@ -239,6 +245,71 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Minimal External Display Brightness Row
+private struct MinimalDisplayRow: View {
+    @Bindable var displayManager: DisplayManager
+    let isIT: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: "display")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+
+                Text(isIT ? "Monitor" : "Display")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                if let name = displayManager.primaryExternalName {
+                    Text(name)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if displayManager.hasExternalDisplay {
+                    Text("\(Int(displayManager.brightness.rounded()))%")
+                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(isIT ? "Non connesso" : "Not connected")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: "sun.min")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.tertiary)
+
+                Slider(value: $displayManager.brightness, in: 10...100, step: 1)
+                    .controlSize(.mini)
+                    .tint(.primary)
+                    .disabled(!displayManager.hasExternalDisplay)
+
+                Image(systemName: "sun.max.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.035))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.8)
+                )
+        )
+        .opacity(displayManager.hasExternalDisplay ? 1.0 : 0.5)
+    }
+}
+
 // MARK: - Ultra-Clean Device Row with Expandable (i) Simulator
 private struct MinimalDeviceRow: View {
     let title: String
@@ -345,7 +416,6 @@ private struct ScrollSimulationPreview: View {
 
     @State private var phase: Bool = false
 
-    // Whether the physical finger/wheel gesture moves UP (-1) or DOWN (+1) to scroll down the page
     private var inputMovesUp: Bool {
         isNatural
     }
@@ -373,7 +443,6 @@ private struct ScrollSimulationPreview: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            // Left: Simulated Trackpad or Mouse
             VStack(spacing: 4) {
                 if deviceKind == .trackpad {
                     simulatedTrackpad
@@ -392,7 +461,6 @@ private struct ScrollSimulationPreview: View {
                 .foregroundStyle(.tertiary)
                 .offset(y: -7)
 
-            // Right: Simulated Page Effect
             VStack(spacing: 4) {
                 simulatedPage
 
@@ -427,7 +495,6 @@ private struct ScrollSimulationPreview: View {
         }
     }
 
-    // Miniature Trackpad with two animated fingers
     private var simulatedTrackpad: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -438,7 +505,6 @@ private struct ScrollSimulationPreview: View {
                 )
                 .frame(width: 54, height: 38)
 
-            // Two fingers moving up (Natural) or down (Classic)
             let startY: CGFloat = inputMovesUp ? 7 : -7
             let endY: CGFloat = inputMovesUp ? -7 : 7
 
@@ -454,7 +520,6 @@ private struct ScrollSimulationPreview: View {
         }
     }
 
-    // Miniature Mouse with animated scroll wheel
     private var simulatedMouse: some View {
         ZStack {
             Capsule(style: .continuous)
@@ -465,13 +530,11 @@ private struct ScrollSimulationPreview: View {
                 )
                 .frame(width: 28, height: 38)
 
-            // Scroll wheel slot
             Capsule(style: .continuous)
                 .fill(Color.primary.opacity(0.10))
                 .frame(width: 5, height: 14)
                 .offset(y: -5)
 
-            // Animated wheel dot moving up (Natural) or down (Classic)
             let startY: CGFloat = inputMovesUp ? -2 : -8
             let endY: CGFloat = inputMovesUp ? -8 : -2
 
@@ -483,7 +546,6 @@ private struct ScrollSimulationPreview: View {
         .frame(width: 54, height: 38)
     }
 
-    // Miniature Page with lines moving up as viewport goes down + scrollbar thumb moving down
     private var simulatedPage: some View {
         ZStack(alignment: .trailing) {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -494,7 +556,6 @@ private struct ScrollSimulationPreview: View {
                 )
                 .frame(width: 54, height: 38)
 
-            // Document lines scrolling up (revealing lower content)
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(0..<5, id: \.self) { idx in
                     RoundedRectangle(cornerRadius: 1)
@@ -507,7 +568,6 @@ private struct ScrollSimulationPreview: View {
             .frame(width: 52, height: 34)
             .clipped()
 
-            // Minimal scrollbar thumb moving DOWN the page
             Capsule()
                 .fill(Color.primary.opacity(0.65))
                 .frame(width: 2.2, height: 9)
@@ -548,5 +608,5 @@ private struct SegmentPill: View {
 }
 
 #Preview {
-    ContentView(engine: ScrollEngine())
+    ContentView(engine: ScrollEngine(), displayManager: DisplayManager())
 }

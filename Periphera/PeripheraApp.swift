@@ -19,10 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct PeripheraApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var engine = ScrollEngine()
+    @State private var displayManager = DisplayManager()
 
     var body: some Scene {
         MenuBarExtra {
-            ContentView(engine: engine)
+            ContentView(engine: engine, displayManager: displayManager)
         } label: {
             MenuBarStatusIcon(
                 isEnabled: engine.isEnabled,
