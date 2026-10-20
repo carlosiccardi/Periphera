@@ -1,7 +1,31 @@
-# Periphera
+<div align="center">
+  <img src="Periphera/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="88" height="88" alt="Periphera Icon" />
+  <h1>Periphera</h1>
+  <p><strong>Independent scroll direction for Trackpad and Mouse on macOS.</strong><br/><em>Scorrimento indipendente per Trackpad e Mouse su macOS.</em></p>
 
-**Independent scroll direction for Trackpad and Mouse on macOS.**  
-*Scorrimento indipendente per Trackpad e Mouse su macOS.*
+  <p>
+    <a href="https://github.com/carlosiccardi/Periphera/releases/latest/download/Periphera.dmg">
+      <img src="https://img.shields.io/badge/Download-Periphera.dmg-white?style=for-the-badge&logo=apple&logoColor=black" alt="Download DMG" />
+    </a>
+  </p>
+</div>
+
+---
+
+## Preview / Anteprima
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center"><strong>Minimal View</strong><br/><em>Vista Minimale</em></td>
+      <td align="center"><strong>Interactive <code>(i)</code> Simulator</strong><br/><em>Simulatore <code>(i)</code> Interattivo</em></td>
+    </tr>
+    <tr>
+      <td valign="top"><img src="docs/preview-minimal.png" width="340" alt="Periphera Minimal UI" /></td>
+      <td valign="top"><img src="docs/preview-simulator.png" width="340" alt="Periphera Interactive Simulator" /></td>
+    </tr>
+  </table>
+</div>
 
 ---
 
@@ -35,7 +59,7 @@ Anche nel 2026, macOS continua a legare lo "Scorrimento naturale" del Trackpad a
 
 ## Installation / Installazione
 
-1. Download **`Periphera.dmg`** from the [Releases](../../releases) page (or build it via `./create_dmg.sh`).
+1. [**Download `Periphera.dmg`**](https://github.com/carlosiccardi/Periphera/releases/latest/download/Periphera.dmg) from the [Releases](https://github.com/carlosiccardi/Periphera/releases) page.
 2. Drag **Periphera.app** into your `/Applications` folder and launch it.
 3. Grant **Accessibility** permission when prompted (*System Settings → Privacy & Security → Accessibility*).
 
@@ -45,4 +69,3 @@ Anche nel 2026, macOS continua a legare lo "Scorrimento naturale" del Trackpad a
 chmod +x create_dmg.sh
 ./create_dmg.sh
 ```
-# Periphera
