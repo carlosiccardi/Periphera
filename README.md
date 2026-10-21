@@ -57,3 +57,8 @@ Even in 2026, macOS still forces a single global toggle for "Natural Scrolling" 
 chmod +x create_dmg.sh
 ./create_dmg.sh
 ```
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright © 2026 Carlo Siccardi.
+
