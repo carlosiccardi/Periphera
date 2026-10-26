@@ -10,6 +10,9 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var engine: ScrollEngine
     @Bindable var displayManager: DisplayManager
+    @Bindable var caffeineManager: CaffeineManager = .shared
+    @Bindable var captureManager: ScreenCaptureManager = .shared
+
     @State private var showMouseSpeedTuning: Bool = false
     @State private var showTrackpadPreview: Bool = false
     @State private var showMousePreview: Bool = false
@@ -72,13 +75,14 @@ struct ContentView: View {
         .animation(.snappy(duration: 0.22), value: showMouseSpeedTuning)
         .animation(.snappy(duration: 0.22), value: showTrackpadPreview)
         .animation(.snappy(duration: 0.22), value: showMousePreview)
+        .animation(.snappy(duration: 0.22), value: caffeineManager.isActive)
         .animation(.snappy(duration: 0.22), value: engine.isAccessibilityGranted)
         .animation(.snappy(duration: 0.18), value: engine.language)
     }
 
-    // MARK: - Compact Header
+    // MARK: - Compact Header with Quick Caffè & Capture Action Icons
     private var headerBar: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 8) {
             Image(systemName: "slider.horizontal.2.square")
                 .font(.system(size: 13.5, weight: .semibold))
                 .foregroundStyle(engine.isEnabled ? .primary : .tertiary)
@@ -100,6 +104,41 @@ struct ContentView: View {
 
             Spacer()
 
+            // 1. Icona Caffè: al tocco cambia colore (arancione attivo, spento inattivo)
+            Button {
+                withAnimation(.snappy(duration: 0.18)) {
+                    caffeineManager.toggle()
+                }
+            } label: {
+                Image(systemName: "cup.and.saucer.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(caffeineManager.isActive ? Color.orange : Color.secondary.opacity(0.65))
+                    .frame(width: 24, height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(caffeineManager.isActive ? Color.orange.opacity(0.14) : Color.primary.opacity(0.04))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(isIT ? (caffeineManager.isActive ? "Caffè attivo (anti-sospensione)" : "Attiva Caffè") : (caffeineManager.isActive ? "Caffeine active (keep awake)" : "Activate Caffeine"))
+
+            // 2. Icona Cattura Schermo: al tocco apre la barra flottante trascinabile
+            Button {
+                CaptureOverlayController.shared.toggle(isIT: isIT)
+            } label: {
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(CaptureOverlayController.shared.isVisible ? Color.primary : Color.secondary.opacity(0.65))
+                    .frame(width: 24, height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(CaptureOverlayController.shared.isVisible ? Color.primary.opacity(0.12) : Color.primary.opacity(0.04))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(isIT ? "Apri barra screenshot & video (⌘⇧6)" : "Open screenshot & video bar (⌘⇧6)")
+
+            // 3. Switch On/Off generale
             Toggle("", isOn: $engine.isEnabled)
                 .toggleStyle(.switch)
                 .labelsHidden()
@@ -150,7 +189,7 @@ struct ContentView: View {
         )
     }
 
-    // MARK: - Inline Mouse Wheel Speed & Horizontal Tuning (inside Mouse Card)
+    // MARK: - Inline Mouse Wheel Speed & Horizontal Tuning
     private var mouseTuningSection: some View {
         VStack(spacing: 7) {
             HStack {
@@ -298,7 +337,7 @@ private struct MinimalDisplayRow: View {
     }
 }
 
-// MARK: - Ultra-Clean Device Row with Expandable (i) Simulator & Optional Inline Settings
+// MARK: - Device Row with Expandable (i) Simulator & Optional Inline Settings
 private struct MinimalDeviceRow<ExtraContent: View>: View {
     let title: String
     let icon: String
@@ -380,7 +419,6 @@ private struct MinimalDeviceRow<ExtraContent: View>: View {
                     .help(isIT ? "Velocità e opzioni rotella" : "Wheel speed & options")
                 }
 
-                // Minimal "i" in a circle button
                 Button {
                     withAnimation(.snappy(duration: 0.22)) {
                         showInfoPreview.toggle()
@@ -395,7 +433,6 @@ private struct MinimalDeviceRow<ExtraContent: View>: View {
                 .help(isIT ? "Mostra simulazione scorrimento" : "Show scroll simulation")
             }
 
-            // Minimal Segmented Control
             HStack(spacing: 4) {
                 SegmentPill(
                     label: naturalLabel,
@@ -426,7 +463,6 @@ private struct MinimalDeviceRow<ExtraContent: View>: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
             }
 
-            // Expandable Simulated Trackpad / Mouse + Page Effect
             if showInfoPreview {
                 ScrollSimulationPreview(
                     deviceKind: deviceKind,
@@ -449,7 +485,7 @@ private struct MinimalDeviceRow<ExtraContent: View>: View {
     }
 }
 
-// MARK: - Compact Animated Simulation View (Device -> Page Effect)
+// MARK: - Animated Simulation View
 private struct ScrollSimulationPreview: View {
     let deviceKind: InputDeviceType
     let isNatural: Bool
@@ -649,5 +685,10 @@ private struct SegmentPill: View {
 }
 
 #Preview {
-    ContentView(engine: ScrollEngine(), displayManager: DisplayManager())
+    ContentView(
+        engine: ScrollEngine(),
+        displayManager: DisplayManager(),
+        caffeineManager: CaffeineManager.shared,
+        captureManager: ScreenCaptureManager.shared
+    )
 }
