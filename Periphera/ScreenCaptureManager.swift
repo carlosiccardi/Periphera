@@ -35,6 +35,10 @@ final class ScreenCaptureManager {
     private var isITLanguage: Bool = true
     private var recordingHUDWindow: NSWindow?
 
+    // Fast-path cache for ScreenCaptureKit during active scrolling session
+    private var cachedFilter: SCContentFilter?
+    private var cachedConfig: SCStreamConfiguration?
+
     private init() {}
 
     // MARK: - Helper paths
@@ -201,10 +205,10 @@ final class ScreenCaptureManager {
             guard let self else { return }
             await self.captureScrollingSliceAsync()
 
-            // Continuous high-frequency capture loop (~80ms / 12.5 fps)
+            // Continuous high-frequency capture loop (~60ms / 16.6 fps)
             self.scrollingTask = Task { @MainActor [weak self] in
                 while let self, self.isScrollingCaptureActive {
-                    try? await Task.sleep(nanoseconds: 80_000_000)
+                    try? await Task.sleep(nanoseconds: 60_000_000)
                     if Task.isCancelled || !self.isScrollingCaptureActive { break }
                     await self.captureScrollingSliceAsync()
                 }
@@ -233,6 +237,8 @@ final class ScreenCaptureManager {
         scrollingTask?.cancel()
         scrollingTask = nil
         isScrollingCaptureActive = false
+        cachedFilter = nil
+        cachedConfig = nil
         ScrollingFrameOverlayController.shared.hide()
 
         let isIT = isITLanguage
@@ -265,6 +271,8 @@ final class ScreenCaptureManager {
         scrollingTask?.cancel()
         scrollingTask = nil
         isScrollingCaptureActive = false
+        cachedFilter = nil
+        cachedConfig = nil
         scrollingEngine.reset()
         scrollingLiveThumbnail = nil
         ScrollingFrameOverlayController.shared.hide()
@@ -272,6 +280,15 @@ final class ScreenCaptureManager {
 
     // MARK: - Fast In-Memory Screen Capture (ScreenCaptureKit with screencapture Fallback)
     private func grabScreenRectCGImage(rect: CGRect) async -> CGImage? {
+        // Fast-path: use cached filter and config for zero-overhead capture during scrolling
+        if let filter = cachedFilter, let config = cachedConfig {
+            do {
+                return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            } catch {
+                // Cache invalidated, fall through to re-query
+            }
+        }
+
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             guard let display = content.displays.first else { return nil }
@@ -290,6 +307,11 @@ final class ScreenCaptureManager {
             config.width = max(1, Int(rect.width * scale))
             config.height = max(1, Int(rect.height * scale))
             config.showsCursor = false
+
+            if isScrollingCaptureActive {
+                self.cachedFilter = filter
+                self.cachedConfig = config
+            }
 
             return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
         } catch {

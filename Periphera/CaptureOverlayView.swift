@@ -6,177 +6,84 @@
 //
 
 import SwiftUI
+import AppKit
 
-enum CaptureOverlayMode {
-    case toolbar
-    case selection(prompt: String, onSelected: (CGRect?) -> Void)
+// MARK: - Native AppKit Drag Handle
+final class WindowDragHandleView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
 }
 
-struct CaptureOverlayView: View {
-    @Bindable var controller: CaptureOverlayController = .shared
-    @Bindable var captureManager: ScreenCaptureManager
+struct WindowDragHandle: NSViewRepresentable {
+    func makeNSView(context: Context) -> WindowDragHandleView {
+        WindowDragHandleView()
+    }
+    func updateNSView(_ nsView: WindowDragHandleView, context: Context) {}
+}
+
+// MARK: - Floating Toolbar View
+struct CaptureToolbarView: View {
     let isIT: Bool
+    let isRecording: Bool
+    let onSelectArea: () -> Void
+    let onFullScreen: () -> Void
+    let onScrolling: () -> Void
+    let onToggleRecord: () -> Void
     let onClose: () -> Void
 
-    // Drag position for the floating toolbar
-    @State private var barOffset: CGSize = .zero
-    @State private var dragStartOffset: CGSize = .zero
-
-    // Selection mode drag coordinates
-    @State private var selStart: CGPoint?
-    @State private var selCurrent: CGPoint?
-
-    private var currentSelectionRect: CGRect? {
-        guard let start = selStart, let current = selCurrent else { return nil }
-        let x = min(start.x, current.x)
-        let y = min(start.y, current.y)
-        let w = abs(current.x - start.x)
-        let h = abs(current.y - start.y)
-        return CGRect(x: x, y: y, width: w, height: h)
-    }
-
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                // 1. Dark dimmed backdrop
-                Color.black.opacity(0.42)
-                    .edgesIgnoringSafeArea(.all)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if case .toolbar = controller.mode {
-                            onClose()
-                        }
-                    }
-
-                // 2. Main Content based on Mode
-                switch controller.mode {
-                case .toolbar:
-                    floatingToolbar
-                        .offset(x: barOffset.width, y: barOffset.height)
-                        // Absorb clicks so toolbar clicks don't hit the dark backdrop
-                        .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-
-                case .selection(let prompt, let onSelected):
-                    selectionLayer(prompt: prompt, geometry: geometry, onSelected: onSelected)
-                }
-            }
-        }
-    }
-
-    // MARK: - Floating Toolbar
-    private var floatingToolbar: some View {
         HStack(spacing: 8) {
-            // Drag Handle: only this grip has DragGesture so buttons receive clicks freely
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.tertiary)
+            // Drag Handle: uses native WindowServer performDrag for silky-smooth 100% crash-proof movement
+            WindowDragHandle()
                 .frame(width: 24, height: 36)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            barOffset = CGSize(
-                                width: dragStartOffset.width + value.translation.width,
-                                height: dragStartOffset.height + value.translation.height
-                            )
-                        }
-                        .onEnded { _ in
-                            dragStartOffset = barOffset
-                        }
+                .overlay(
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.tertiary)
                 )
-                .onHover { isHover in
-                    if isHover {
-                        NSCursor.openHand.set()
-                    } else {
-                        NSCursor.arrow.set()
-                    }
-                }
                 .help(isIT ? "Trascina per spostare la barra" : "Drag to move toolbar")
 
-            // 1. Ritaglio Area: interactive crosshairs selection
+            // 1. Ritaglio Area
             ToolbarButton(
                 title: isIT ? "Ritaglio Area" : "Select Area",
                 icon: "crop",
-                shortcutKey: "1"
-            ) {
-                NSCursor.crosshair.push()
-                controller.mode = .selection(
-                    prompt: isIT
-                        ? "Trascina per selezionare l'area da catturare"
-                        : "Drag to select screenshot area",
-                    onSelected: { rect in
-                        CaptureOverlayController.shared.hideImmediately()
-                        if let rect {
-                            captureManager.captureAreaScreenshot(rect: rect, isIT: isIT)
-                        }
-                    }
-                )
-            }
+                shortcutKey: "1",
+                action: onSelectArea
+            )
 
-            // 2. Schermo Intero: immediate fullscreen screenshot
+            // 2. Schermo Intero
             ToolbarButton(
                 title: isIT ? "Schermo Intero" : "Full Screen",
                 icon: "display",
-                shortcutKey: "2"
-            ) {
-                onClose()
-                captureManager.captureFullScreenScreenshot(isIT: isIT)
-            }
+                shortcutKey: "2",
+                action: onFullScreen
+            )
 
-            // 3. Screenshot a Scorrimento: choose area, then scroll & stitch into PNG
+            // 3. Screenshot a Scorrimento
             ToolbarButton(
                 title: isIT ? "Screenshot a Scorrimento" : "Scrolling Screenshot",
                 icon: "arrow.up.and.down.text.horizontal",
                 accentColor: .blue,
-                shortcutKey: "3"
-            ) {
-                NSCursor.crosshair.push()
-                controller.mode = .selection(
-                    prompt: isIT
-                        ? "Trascina per selezionare l'area di scorrimento (o Invio per tutto lo schermo)"
-                        : "Drag to select scroll area (or Enter for full screen)",
-                    onSelected: { rect in
-                        CaptureOverlayController.shared.hideImmediately()
-                        if let rect {
-                            captureManager.beginScrollingCaptureSession(rect: rect, isIT: isIT)
-                        }
-                    }
-                )
-            }
+                shortcutKey: "3",
+                action: onScrolling
+            )
 
-            // 4. Registra Schermo (Scelta Schermo Intero o Porzione)
+            // 4. Registra Schermo
             ToolbarButton(
-                title: captureManager.isRecordingVideo
+                title: isRecording
                     ? (isIT ? "Ferma REC" : "Stop REC")
                     : (isIT ? "Registra Schermo" : "Record Screen"),
-                icon: captureManager.isRecordingVideo ? "stop.circle.fill" : "record.circle",
+                icon: isRecording ? "stop.circle.fill" : "record.circle",
                 accentColor: .red,
-                isHighlighted: captureManager.isRecordingVideo,
-                shortcutKey: "4"
-            ) {
-                if captureManager.isRecordingVideo {
-                    onClose()
-                    captureManager.stopVideoRecording()
-                } else {
-                    NSCursor.crosshair.push()
-                    controller.mode = .selection(
-                        prompt: isIT
-                            ? "Trascina per selezionare l'area da registrare (o Invio per tutto lo schermo)"
-                            : "Drag to select recording area (or Enter for full screen)",
-                        onSelected: { rect in
-                            CaptureOverlayController.shared.hideImmediately()
-                            if let rect {
-                                if let screen = NSScreen.main,
-                                   abs(rect.width - screen.frame.width) < 15 && abs(rect.height - screen.frame.height) < 15 {
-                                    captureManager.startVideoRecording(area: nil)
-                                } else {
-                                    captureManager.startVideoRecording(area: rect)
-                                }
-                            }
-                        }
-                    )
-                }
-            }
+                isHighlighted: isRecording,
+                shortcutKey: "4",
+                action: onToggleRecord
+            )
 
             Divider()
                 .frame(height: 20)
@@ -208,95 +115,120 @@ struct CaptureOverlayView: View {
                 )
         )
         .shadow(color: .black.opacity(0.28), radius: 24, x: 0, y: 10)
-        .frame(height: 52)
+        .padding(14)
+    }
+}
+
+// MARK: - Fullscreen Selection Overlay View
+struct SelectionOverlayView: View {
+    let prompt: String
+    let isIT: Bool
+    let onSelected: (CGRect) -> Void
+    let onCancel: () -> Void
+
+    @State private var startPoint: CGPoint?
+    @State private var currentPoint: CGPoint?
+
+    private var selectionRect: CGRect? {
+        guard let s = startPoint, let c = currentPoint else { return nil }
+        let x = min(s.x, c.x)
+        let y = min(s.y, c.y)
+        let w = abs(c.x - s.x)
+        let h = abs(c.y - s.y)
+        return CGRect(x: x, y: y, width: w, height: h)
     }
 
-    // MARK: - Interactive Selection Layer
-    private func selectionLayer(prompt: String, geometry: GeometryProxy, onSelected: @escaping (CGRect?) -> Void) -> some View {
-        ZStack(alignment: .topLeading) {
-            // Instruction Banner at Top
-            HStack(spacing: 8) {
-                Image(systemName: "crop")
-                    .font(.system(size: 12.5, weight: .semibold))
-                Text(prompt)
-                    .font(.system(size: 12.5, weight: .medium))
-                Text("•")
-                    .foregroundStyle(.secondary)
-                Text(isIT ? "Invio: Schermo intero  |  Esc: Annulla" : "Enter: Full screen  |  Esc: Cancel")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(.regularMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.20), lineWidth: 0.8)
-                    )
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.top, 40)
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                // Dimmed backdrop with cutout for the selection rect
+                if let rect = selectionRect, rect.width > 2 && rect.height > 2 {
+                    // Dim surrounding area
+                    Path { path in
+                        path.addRect(CGRect(origin: .zero, size: geometry.size))
+                        path.addRect(rect)
+                    }
+                    .fill(Color.black.opacity(0.40), style: FillStyle(eoFill: true))
 
-            // Selection box cutout & dimensions badge
-            if let rect = currentSelectionRect, rect.width > 2 && rect.height > 2 {
-                Rectangle()
-                    .fill(Color.white.opacity(0.04))
-                    .frame(width: rect.width, height: rect.height)
-                    .overlay(
-                        Rectangle()
-                            .strokeBorder(Color.white, lineWidth: 1.5)
-                    )
-                    .offset(x: rect.minX, y: rect.minY)
+                    // Selection Border
+                    Rectangle()
+                        .strokeBorder(Color.white, lineWidth: 1.5)
+                        .frame(width: rect.width, height: rect.height)
+                        .offset(x: rect.minX, y: rect.minY)
 
-                Text("\(Int(rect.width)) × \(Int(rect.height)) px")
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    // Dimensions Badge
+                    HStack(spacing: 3) {
+                        Text("\(Int(rect.width)) × \(Int(rect.height)) px")
+                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(Color.black.opacity(0.80))
+                            .fill(Color.black.opacity(0.85))
                     )
                     .offset(x: rect.minX, y: max(0, rect.minY - 24))
+                } else {
+                    Color.black.opacity(0.35)
+                        .edgesIgnoringSafeArea(.all)
+                }
+
+                // Instruction Banner at Top
+                HStack(spacing: 8) {
+                    Image(systemName: "crop")
+                        .font(.system(size: 12.5, weight: .semibold))
+                    Text(prompt)
+                        .font(.system(size: 12.5, weight: .medium))
+                    Text("•")
+                        .foregroundStyle(.secondary)
+                    Text(isIT ? "Invio: Schermo intero  |  Esc: Annulla" : "Enter: Full screen  |  Esc: Cancel")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(.regularMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.20), lineWidth: 0.8)
+                        )
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 40)
             }
-        }
-        .contentShape(Rectangle())
-        .onAppear {
-            NSCursor.crosshair.push()
-        }
-        .onDisappear {
-            NSCursor.pop()
-        }
-        .gesture(
-            DragGesture(minimumDistance: 1)
-                .onChanged { value in
-                    if selStart == nil {
-                        selStart = value.startLocation
+            .contentShape(Rectangle())
+            .onAppear {
+                NSCursor.crosshair.push()
+            }
+            .onDisappear {
+                NSCursor.pop()
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        if startPoint == nil {
+                            startPoint = value.startLocation
+                        }
+                        currentPoint = value.location
                     }
-                    selCurrent = value.location
-                }
-                .onEnded { value in
-                    guard let rect = currentSelectionRect, rect.width > 12, rect.height > 12 else {
-                        completeWithFullScreen(geometry: geometry, onSelected: onSelected)
-                        return
+                    .onEnded { _ in
+                        guard let rect = selectionRect, rect.width > 12, rect.height > 12 else {
+                            // If just clicked without drag, select full screen
+                            onSelected(CGRect(origin: .zero, size: geometry.size))
+                            return
+                        }
+                        onSelected(rect)
                     }
-
-                    CaptureOverlayController.shared.hideImmediately()
-                    onSelected(rect)
-                }
-        )
-    }
-
-    private func completeWithFullScreen(geometry: GeometryProxy, onSelected: (CGRect?) -> Void) {
-        CaptureOverlayController.shared.hideImmediately()
-        onSelected(CGRect(origin: .zero, size: geometry.size))
+            )
+        }
     }
 }
 
 // MARK: - Reusable Toolbar Button
-private struct ToolbarButton: View {
+struct ToolbarButton: View {
     let title: String
     let icon: String
     var accentColor: Color = .primary
