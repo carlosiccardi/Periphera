@@ -223,9 +223,6 @@ private struct QuickAccessMockView: View {
 
             // Simulated web page preview
             ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.black.opacity(0.10))
-
                 VStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color.blue.opacity(0.7))
@@ -246,6 +243,11 @@ private struct QuickAccessMockView: View {
                 .padding(8)
             }
             .frame(height: 160)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.8)
+            )
             .padding(.horizontal, 10)
 
             HStack(spacing: 8) {

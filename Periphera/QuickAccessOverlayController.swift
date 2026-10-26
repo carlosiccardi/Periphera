@@ -28,15 +28,17 @@ final class QuickAccessOverlayController {
 
         guard let screen = NSScreen.main else { return }
 
-        let panelW: CGFloat = 260
-        let panelH: CGFloat = 320
-        let padding: CGFloat = 20
+        // Give the window generous margins around the 260pt card so the soft drop shadow
+        // never clips against window boundaries (which caused the dark edge residue).
+        let windowW: CGFloat = 296
+        let windowH: CGFloat = 360
+        let margin: CGFloat = 16
 
-        let x = screen.frame.maxX - panelW - padding
-        let y = screen.visibleFrame.minY + padding
+        let x = screen.frame.maxX - windowW - margin
+        let y = screen.visibleFrame.minY + margin
 
         let overlayPanel = QuickAccessPanel(
-            contentRect: NSRect(x: x, y: y, width: panelW, height: panelH),
+            contentRect: NSRect(x: x, y: y, width: windowW, height: windowH),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -44,7 +46,7 @@ final class QuickAccessOverlayController {
         overlayPanel.level = .floating
         overlayPanel.isOpaque = false
         overlayPanel.backgroundColor = .clear
-        overlayPanel.hasShadow = true
+        overlayPanel.hasShadow = false // Handled cleanly with padding in SwiftUI to prevent double shadow artifacts
         overlayPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         let rootView = QuickAccessOverlayView(
@@ -57,20 +59,22 @@ final class QuickAccessOverlayController {
             }
         )
 
-        overlayPanel.contentView = NSHostingView(rootView: rootView)
+        let hosting = NSHostingView(rootView: rootView)
+        hosting.frame = NSRect(x: 0, y: 0, width: windowW, height: windowH)
+        overlayPanel.contentView = hosting
         overlayPanel.alphaValue = 0
         overlayPanel.orderFrontRegardless()
 
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
+            context.duration = 0.20
             overlayPanel.animator().alphaValue = 1.0
         }
 
         self.panel = overlayPanel
 
-        // Auto-dismiss after 14 seconds
+        // Auto-dismiss after 15 seconds
         dismissTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 14_000_000_000)
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
             if !Task.isCancelled {
                 self?.hide()
             }
@@ -83,7 +87,7 @@ final class QuickAccessOverlayController {
         guard let p = panel else { return }
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.18
+            context.duration = 0.16
             p.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
@@ -94,7 +98,7 @@ final class QuickAccessOverlayController {
     }
 }
 
-// MARK: - SwiftUI View for CleanShot X-Style Quick Access Overlay
+// MARK: - Clean SwiftUI View for Quick Access Overlay
 private struct QuickAccessOverlayView: View {
     let image: NSImage
     let fileURL: URL
@@ -103,14 +107,13 @@ private struct QuickAccessOverlayView: View {
     let onClose: () -> Void
 
     @State private var hasCopied: Bool = false
-    @State private var isHovered: Bool = false
 
     var body: some View {
         VStack(spacing: 8) {
             // Header
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 11.5, weight: .bold))
                     .foregroundStyle(.green)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -135,25 +138,23 @@ private struct QuickAccessOverlayView: View {
             .padding(.horizontal, 10)
             .padding(.top, 10)
 
-            // Image Preview (Draggable into other apps)
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.black.opacity(0.05))
-
-                ScrollView(.vertical, showsIndicators: true) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .padding(4)
-                }
-                .frame(maxHeight: 185)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .onDrag {
-                    NSItemProvider(contentsOf: fileURL) ?? NSItemProvider(object: image)
-                }
-                .help(isIT ? "Trascina l'immagine per condividerla" : "Drag image to share anywhere")
+            // Image Preview (Clean container with no black borders/residues)
+            ScrollView(.vertical, showsIndicators: false) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.8)
+                    )
             }
+            .frame(maxHeight: 185)
             .padding(.horizontal, 10)
+            .onDrag {
+                NSItemProvider(contentsOf: fileURL) ?? NSItemProvider(object: image)
+            }
+            .help(isIT ? "Trascina l'immagine per condividerla" : "Drag image to share anywhere")
 
             // Action Buttons Bar
             HStack(spacing: 8) {
@@ -206,6 +207,7 @@ private struct QuickAccessOverlayView: View {
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
         }
+        .frame(width: 260)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -214,8 +216,8 @@ private struct QuickAccessOverlayView: View {
                         .strokeBorder(Color.white.opacity(0.20), lineWidth: 0.8)
                 )
         )
-        .shadow(color: .black.opacity(0.25), radius: 18, x: 0, y: 8)
-        .frame(width: 260)
-        .onHover { isHovered = $0 }
+        // Soft drop shadow with sufficient margin so it fades out without edge clipping
+        .shadow(color: .black.opacity(0.22), radius: 14, x: 0, y: 6)
+        .padding(18)
     }
 }

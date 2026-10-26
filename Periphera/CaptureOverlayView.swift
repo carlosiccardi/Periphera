@@ -13,9 +13,9 @@ enum CaptureOverlayMode {
 }
 
 struct CaptureOverlayView: View {
+    @Bindable var controller: CaptureOverlayController = .shared
     @Bindable var captureManager: ScreenCaptureManager
     let isIT: Bool
-    @Binding var mode: CaptureOverlayMode
     let onClose: () -> Void
 
     // Drag position for the floating toolbar
@@ -43,13 +43,13 @@ struct CaptureOverlayView: View {
                     .edgesIgnoringSafeArea(.all)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        if case .toolbar = mode {
+                        if case .toolbar = controller.mode {
                             onClose()
                         }
                     }
 
                 // 2. Main Content based on Mode
-                switch mode {
+                switch controller.mode {
                 case .toolbar:
                     floatingToolbar
                         .offset(x: barOffset.width, y: barOffset.height)
@@ -93,14 +93,24 @@ struct CaptureOverlayView: View {
                 }
                 .help(isIT ? "Trascina per spostare la barra" : "Drag to move toolbar")
 
-            // 1. Ritaglio Area: immediate interactive crosshairs capture
+            // 1. Ritaglio Area: interactive crosshairs selection
             ToolbarButton(
                 title: isIT ? "Ritaglio Area" : "Select Area",
                 icon: "crop",
                 shortcutKey: "1"
             ) {
-                onClose()
-                captureManager.captureAreaScreenshot(isIT: isIT)
+                NSCursor.crosshair.push()
+                controller.mode = .selection(
+                    prompt: isIT
+                        ? "Trascina per selezionare l'area da catturare"
+                        : "Drag to select screenshot area",
+                    onSelected: { rect in
+                        CaptureOverlayController.shared.hideImmediately()
+                        if let rect {
+                            captureManager.captureAreaScreenshot(rect: rect, isIT: isIT)
+                        }
+                    }
+                )
             }
 
             // 2. Schermo Intero: immediate fullscreen screenshot
@@ -120,8 +130,8 @@ struct CaptureOverlayView: View {
                 accentColor: .blue,
                 shortcutKey: "3"
             ) {
-                NSCursor.crosshair.set()
-                mode = .selection(
+                NSCursor.crosshair.push()
+                controller.mode = .selection(
                     prompt: isIT
                         ? "Trascina per selezionare l'area di scorrimento (o Invio per tutto lo schermo)"
                         : "Drag to select scroll area (or Enter for full screen)",
@@ -148,8 +158,8 @@ struct CaptureOverlayView: View {
                     onClose()
                     captureManager.stopVideoRecording()
                 } else {
-                    NSCursor.crosshair.set()
-                    mode = .selection(
+                    NSCursor.crosshair.push()
+                    controller.mode = .selection(
                         prompt: isIT
                             ? "Trascina per selezionare l'area da registrare (o Invio per tutto lo schermo)"
                             : "Drag to select recording area (or Enter for full screen)",

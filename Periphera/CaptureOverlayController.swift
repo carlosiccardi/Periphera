@@ -7,18 +7,20 @@
 
 import Cocoa
 import SwiftUI
+import Observation
 
 final class CaptureOverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
 
+@Observable
 @MainActor
 final class CaptureOverlayController {
     static let shared = CaptureOverlayController()
 
-    private var window: CaptureOverlayPanel?
-    private var localKeyMonitor: Any?
+    @ObservationIgnored private var window: CaptureOverlayPanel?
+    @ObservationIgnored private var localKeyMonitor: Any?
     var mode: CaptureOverlayMode = .toolbar
 
     var isVisible: Bool {
@@ -61,15 +63,10 @@ final class CaptureOverlayController {
         panel.ignoresMouseEvents = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let bindingMode = Binding<CaptureOverlayMode>(
-            get: { self.mode },
-            set: { self.mode = $0 }
-        )
-
         let rootView = CaptureOverlayView(
+            controller: self,
             captureManager: ScreenCaptureManager.shared,
-            isIT: isIT,
-            mode: bindingMode
+            isIT: isIT
         ) { [weak self] in
             self?.hide()
         }

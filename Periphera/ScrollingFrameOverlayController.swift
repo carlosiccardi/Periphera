@@ -8,37 +8,23 @@
 import Cocoa
 import SwiftUI
 
-final class ScrollingFramePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
-}
-
-/// Custom NSView that allows mouse and scroll wheel events to pass through directly
-/// to whatever window is behind the selection box, while keeping the HUD control bar fully interactive.
-final class ScrollingFramePassThroughView: NSView {
-    var captureRect: CGRect = .zero
-    var pillHostingView: NSView?
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        if let pill = pillHostingView {
-            let localToPill = pill.convert(point, from: self)
-            if pill.bounds.contains(localToPill) {
-                return pill.hitTest(point)
-            }
-        }
-
-        // Inside the capture box or anywhere on the backdrop:
-        // Return nil so mouse and trackpad scroll events reach the underlying web page or application!
-        return nil
-    }
+final class NonActivatingFloatingPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }
 
 @MainActor
 final class ScrollingFrameOverlayController {
     static let shared = ScrollingFrameOverlayController()
 
-    private var panel: ScrollingFramePanel?
-    private var keyMonitor: Any?
+    // 1. Passive Border Frame Window (ignoresMouseEvents = true so scrolling goes straight to the page)
+    private var borderPanel: NonActivatingFloatingPanel?
+
+    // 2. Interactive Floating Pill HUD Window (placed below the area, size: 380x54)
+    private var pillPanel: NonActivatingFloatingPanel?
+
+    private var localKeyMonitor: Any?
+    private var globalKeyMonitor: Any?
 
     private init() {}
 
@@ -53,50 +39,107 @@ final class ScrollingFrameOverlayController {
 
         guard let screen = NSScreen.main else { return }
 
-        let framePanel = ScrollingFramePanel(
+        // --- 1. Create Passive Border Window (100% Click-Through & Scroll-Through) ---
+        let bPanel = NonActivatingFloatingPanel(
             contentRect: screen.frame,
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        framePanel.level = .floating
-        framePanel.isOpaque = false
-        framePanel.backgroundColor = .clear
-        framePanel.hasShadow = false
-        framePanel.ignoresMouseEvents = false
-        framePanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        bPanel.level = .floating
+        bPanel.isOpaque = false
+        bPanel.backgroundColor = .clear
+        bPanel.hasShadow = false
+        bPanel.ignoresMouseEvents = true // CRITICAL: mouse & trackpad events pass right through to Safari / Chrome!
+        bPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let containerView = ScrollingFramePassThroughView(frame: screen.frame)
-        containerView.captureRect = rect
+        let borderView = ScrollingBorderFrameView(rect: rect, isIT: isIT)
+        let borderHosting = NSHostingView(rootView: borderView)
+        borderHosting.frame = screen.frame
+        bPanel.contentView = borderHosting
+        bPanel.setFrame(screen.frame, display: true)
+        bPanel.orderFrontRegardless()
+        self.borderPanel = bPanel
 
-        // Overlay View drawing frame cutout and floating control pill
-        let hudView = ScrollingCaptureSessionHUD(
+        // --- 2. Create Floating Pill HUD Window (Outside capture area, fully clickable) ---
+        let pillW: CGFloat = 380
+        let pillH: CGFloat = 54
+
+        // Position pill bar centered relative to the capture rect, 16pt below it (or bottom of screen)
+        var pillX = rect.midX - (pillW / 2.0)
+        pillX = max(16, min(screen.frame.width - pillW - 16, pillX))
+
+        // Convert SwiftUI top-left Y to Cocoa bottom-left Y
+        // SwiftUI: rect.maxY is distance from top of screen
+        // Cocoa: y = screenH - rect.maxY - pillH - 16
+        var pillY = screen.frame.height - rect.maxY - pillH - 16
+        if pillY < 24 {
+            // If rect reaches the bottom of the screen, place pill bar above rect or 24pt from bottom
+            let topY = screen.frame.height - rect.minY + 16
+            pillY = (topY + pillH < screen.frame.height - 30) ? topY : 24
+        }
+
+        let pPanel = NonActivatingFloatingPanel(
+            contentRect: NSRect(x: pillX, y: pillY, width: pillW, height: pillH),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        pPanel.level = .floating
+        pPanel.isOpaque = false
+        pPanel.backgroundColor = .clear
+        pPanel.hasShadow = false
+        pPanel.ignoresMouseEvents = false
+        pPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        let pillView = ScrollingControlBarView(
             rect: rect,
             isIT: isIT,
             manager: manager,
             onDone: onDone,
             onCancel: onCancel
         )
-
-        let hostingView = NSHostingView(rootView: hudView)
-        hostingView.frame = screen.frame
-        containerView.pillHostingView = hostingView
-        containerView.addSubview(hostingView)
-
-        framePanel.contentView = containerView
-        framePanel.setFrame(screen.frame, display: true)
-        framePanel.alphaValue = 0
-        framePanel.makeKeyAndOrderFront(nil)
+        let pillHosting = NSHostingView(rootView: pillView)
+        pillHosting.frame = NSRect(x: 0, y: 0, width: pillW, height: pillH)
+        pPanel.contentView = pillHosting
+        pPanel.alphaValue = 0
+        pPanel.orderFrontRegardless()
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.16
-            framePanel.animator().alphaValue = 1.0
+            pPanel.animator().alphaValue = 1.0
+        }
+        self.pillPanel = pPanel
+
+        // --- 3. Install Global & Local Key Monitors for Enter (Done) & Esc (Cancel) ---
+        installKeyMonitors(onDone: onDone, onCancel: onCancel)
+    }
+
+    func hide() {
+        removeKeyMonitors()
+
+        if let b = borderPanel {
+            b.orderOut(nil)
+            borderPanel = nil
         }
 
-        self.panel = framePanel
+        if let p = pillPanel {
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.12
+                p.animator().alphaValue = 0
+            }, completionHandler: { [weak self] in
+                MainActor.assumeIsolated {
+                    p.close()
+                    self?.pillPanel = nil
+                }
+            })
+        }
+    }
 
-        // Keyboard monitor for Enter (Done) and Esc (Cancel)
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+    private func installKeyMonitors(onDone: @escaping () -> Void, onCancel: @escaping () -> Void) {
+        removeKeyMonitors()
+
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 36 { // Return / Enter
                 onDone()
                 return nil
@@ -107,56 +150,50 @@ final class ScrollingFrameOverlayController {
             }
             return event
         }
+
+        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 36 { // Return / Enter
+                Task { @MainActor in onDone() }
+            } else if event.keyCode == 53 { // Esc
+                Task { @MainActor in onCancel() }
+            }
+        }
     }
 
-    func hide() {
-        if let monitor = keyMonitor {
-            NSEvent.removeMonitor(monitor)
-            keyMonitor = nil
+    private func removeKeyMonitors() {
+        if let local = localKeyMonitor {
+            NSEvent.removeMonitor(local)
+            localKeyMonitor = nil
         }
-
-        guard let p = panel else { return }
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.12
-            p.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            MainActor.assumeIsolated {
-                p.close()
-                self?.panel = nil
-            }
-        })
+        if let global = globalKeyMonitor {
+            NSEvent.removeMonitor(global)
+            globalKeyMonitor = nil
+        }
     }
 }
 
-// MARK: - Active Scrolling Capture HUD (CleanShot X Style)
-private struct ScrollingCaptureSessionHUD: View {
+// MARK: - Passive Border Frame View (Drawn on ignoresMouseEvents panel)
+private struct ScrollingBorderFrameView: View {
     let rect: CGRect
     let isIT: Bool
-    @Bindable var manager: ScreenCaptureManager
-    let onDone: () -> Void
-    let onCancel: () -> Void
-
-    @State private var pulse: Bool = false
 
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
-                // 1. Subtle dark vignette outside the captured rect to focus user attention
+                // Subtle focus backdrop
                 Path { path in
                     path.addRect(CGRect(origin: .zero, size: geometry.size))
                     path.addRoundedRect(in: rect, cornerSize: CGSize(width: 4, height: 4))
                 }
                 .fill(Color.black.opacity(0.18), style: FillStyle(eoFill: true))
-                .allowsHitTesting(false)
 
-                // 2. Glowing frame border around the active capture rectangle
+                // Frame Outline
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .strokeBorder(Color.blue.opacity(0.9), lineWidth: 2.0)
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
-                    .allowsHitTesting(false)
 
-                // 3. Size badge at top corner of frame
+                // Dimensions badge
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.up.and.down")
                         .font(.system(size: 8.5, weight: .bold))
@@ -168,20 +205,23 @@ private struct ScrollingCaptureSessionHUD: View {
                 .padding(.vertical, 3)
                 .background(RoundedRectangle(cornerRadius: 4).fill(Color.blue.opacity(0.85)))
                 .position(x: rect.minX + 55, y: max(20, rect.minY - 14))
-                .allowsHitTesting(false)
-
-                // 4. CleanShot X-Style Floating Control Pill Bar
-                floatingPillBar(geometry: geometry)
             }
         }
     }
+}
 
-    private func floatingPillBar(geometry: GeometryProxy) -> some View {
-        // Position pill bar right below the capture rect, or at bottom-center if rect touches bottom
-        let barY: CGFloat = min(geometry.size.height - 40, rect.maxY + 36)
-        let barX: CGFloat = min(max(rect.midX, 220), geometry.size.width - 220)
+// MARK: - Floating Control Bar View (CleanShot X Style Pill)
+private struct ScrollingControlBarView: View {
+    let rect: CGRect
+    let isIT: Bool
+    @Bindable var manager: ScreenCaptureManager
+    let onDone: () -> Void
+    let onCancel: () -> Void
 
-        return HStack(spacing: 12) {
+    @State private var pulse: Bool = false
+
+    var body: some View {
+        HStack(spacing: 12) {
             // Live Thumbnail if available
             if let thumb = manager.scrollingLiveThumbnail {
                 Image(nsImage: thumb)
@@ -189,7 +229,7 @@ private struct ScrollingCaptureSessionHUD: View {
                     .scaledToFit()
                     .frame(width: 32, height: 42)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.25), lineWidth: 0.5))
             } else {
                 Circle()
                     .fill(Color.blue)
@@ -252,8 +292,7 @@ private struct ScrollingCaptureSessionHUD: View {
                         .strokeBorder(Color.white.opacity(0.25), lineWidth: 0.8)
                 )
         )
-        .shadow(color: .black.opacity(0.32), radius: 20, x: 0, y: 8)
+        .shadow(color: .black.opacity(0.30), radius: 18, x: 0, y: 8)
         .frame(width: 380, height: 50)
-        .position(x: barX, y: barY)
     }
 }
