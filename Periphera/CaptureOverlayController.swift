@@ -96,8 +96,10 @@ final class CaptureOverlayController {
             context.duration = 0.15
             win.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
-            win.orderOut(nil)
-            self?.window = nil
+            MainActor.assumeIsolated {
+                win.orderOut(nil)
+                self?.window = nil
+            }
         })
     }
 
@@ -141,7 +143,7 @@ final class CaptureOverlayController {
                     onSelected: { rect in
                         self.hideImmediately()
                         if let rect {
-                            ScreenCaptureManager.shared.captureAreaScreenshot(rect: rect)
+                            ScreenCaptureManager.shared.captureAreaScreenshot(rect: rect, isIT: isIT)
                         }
                     }
                 )
@@ -149,7 +151,7 @@ final class CaptureOverlayController {
 
             case "2":
                 self.hideImmediately()
-                ScreenCaptureManager.shared.captureFullScreenScreenshot()
+                ScreenCaptureManager.shared.captureFullScreenScreenshot(isIT: isIT)
                 return nil
 
             case "3":

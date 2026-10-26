@@ -100,7 +100,7 @@ struct CaptureOverlayView: View {
                 shortcutKey: "1"
             ) {
                 onClose()
-                captureManager.captureAreaScreenshot()
+                captureManager.captureAreaScreenshot(isIT: isIT)
             }
 
             // 2. Schermo Intero: immediate fullscreen screenshot
@@ -110,7 +110,7 @@ struct CaptureOverlayView: View {
                 shortcutKey: "2"
             ) {
                 onClose()
-                captureManager.captureFullScreenScreenshot()
+                captureManager.captureFullScreenScreenshot(isIT: isIT)
             }
 
             // 3. Screenshot a Scorrimento: choose area, then scroll & stitch into PNG
@@ -273,27 +273,15 @@ struct CaptureOverlayView: View {
                         return
                     }
 
-                    if let screen = NSScreen.main {
-                        let screenH = screen.frame.height
-                        let cocoaY = screenH - (rect.origin.y + rect.height)
-                        let finalRect = CGRect(x: rect.origin.x, y: cocoaY, width: rect.width, height: rect.height)
-                        CaptureOverlayController.shared.hideImmediately()
-                        onSelected(finalRect)
-                    } else {
-                        CaptureOverlayController.shared.hideImmediately()
-                        onSelected(rect)
-                    }
+                    CaptureOverlayController.shared.hideImmediately()
+                    onSelected(rect)
                 }
         )
     }
 
     private func completeWithFullScreen(geometry: GeometryProxy, onSelected: (CGRect?) -> Void) {
         CaptureOverlayController.shared.hideImmediately()
-        if let screen = NSScreen.main {
-            onSelected(screen.frame)
-        } else {
-            onSelected(CGRect(origin: .zero, size: geometry.size))
-        }
+        onSelected(CGRect(origin: .zero, size: geometry.size))
     }
 }
 

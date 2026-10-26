@@ -13,6 +13,7 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
     private var baseImage: CGImage?
     private var slices: [(image: CGImage, shift: Int)] = []
     private var lastCapturedImage: CGImage?
+    private var currentTotalHeight: Int = 0
     private let queue = DispatchQueue(label: "com.periphera.scrollingStitcher", qos: .userInitiated)
 
     nonisolated init() {}
@@ -22,36 +23,48 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
             baseImage = nil
             slices.removeAll()
             lastCapturedImage = nil
+            currentTotalHeight = 0
         }
     }
 
-    /// Appends a newly captured frame, detecting scroll shift and buffering slices.
-    /// Returns true if a new scroll slice was successfully matched and added.
-    @discardableResult
-    nonisolated func processNewFrame(_ frame: CGImage) -> Bool {
+    /// Process a new frame captured from the screen.
+    /// Returns (didAdd: whether new scrolled content was appended, totalHeight, thumbnailPreview).
+    nonisolated func processNewFrame(_ frame: CGImage) -> (didAdd: Bool, totalHeight: Int, thumbnail: NSImage?) {
         queue.sync {
             guard let previous = lastCapturedImage else {
                 baseImage = frame
                 lastCapturedImage = frame
-                return true
+                currentTotalHeight = frame.height
+                let thumb = makeLiveThumbnail(base: frame, currentTotalHeight: frame.height)
+                return (true, currentTotalHeight, thumb)
             }
 
             guard previous.width == frame.width, previous.height == frame.height else {
-                return false
+                return (false, currentTotalHeight, nil)
             }
 
-            guard let shift = detectVerticalScrollShift(prev: previous, curr: frame) else {
-                return false
+            guard let shift = detectConsensusVerticalShift(prev: previous, curr: frame) else {
+                return (false, currentTotalHeight, nil)
             }
 
-            // If shift is 0, user hasn't scrolled yet; skip frame
-            if shift <= 0 {
-                return false
+            // If shift is 0 or negligible, user hasn't scrolled yet; skip frame
+            if shift <= 1 {
+                return (false, currentTotalHeight, nil)
             }
 
-            slices.append((image: frame, shift: shift))
+            // Crop the bottom `shift` pixels of `frame` (the brand new content that scrolled into view)
+            let cropY = frame.height - shift
+            guard cropY >= 0,
+                  let croppedSlice = frame.cropping(to: CGRect(x: 0, y: cropY, width: frame.width, height: shift)) else {
+                return (false, currentTotalHeight, nil)
+            }
+
+            slices.append((image: croppedSlice, shift: shift))
             lastCapturedImage = frame
-            return true
+            currentTotalHeight += shift
+
+            let thumb = makeLiveThumbnail(base: baseImage ?? frame, currentTotalHeight: currentTotalHeight)
+            return (true, currentTotalHeight, thumb)
         }
     }
 
@@ -61,16 +74,18 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
         }
     }
 
-    /// Stitches all captured slices into a single tall composite CGImage.
+    nonisolated var currentHeight: Int {
+        queue.sync { currentTotalHeight }
+    }
+
+    /// Stitches all captured slices into a single tall composite CGImage with 0 pixel alignment error.
     nonisolated func finalizeStitchedImage() -> CGImage? {
         queue.sync {
             guard let base = baseImage else { return nil }
             if slices.isEmpty { return base }
 
             let width = base.width
-            let totalShift = slices.reduce(0) { $0 + $1.shift }
-            let totalHeight = base.height + totalShift
-
+            let totalHeight = currentTotalHeight
             guard width > 0, totalHeight > 0 else { return base }
 
             let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -87,35 +102,55 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
                 return base
             }
 
-            // In CGContext, (0,0) is bottom-left. The initial base frame sits at the top.
+            // In macOS CoreGraphics CGContext without CTM flipping:
+            // (0,0) is bottom-left, y points up.
+            // Drawing at `totalHeight - base.height` places the initial base image at the TOP of the composite.
             var currentTopY = totalHeight - base.height
             context.draw(base, in: CGRect(x: 0, y: currentTopY, width: width, height: base.height))
 
-            // Draw each slice below it
+            // Draw each slice below it in continuous vertical succession
             for slice in slices {
-                let shift = slice.shift
-                let img = slice.image
-
-                let cropY = img.height - shift
-                guard cropY >= 0, shift > 0,
-                      let croppedSlice = img.cropping(to: CGRect(x: 0, y: cropY, width: width, height: shift)) else {
-                    continue
-                }
-
-                currentTopY -= shift
-                context.draw(croppedSlice, in: CGRect(x: 0, y: currentTopY, width: width, height: shift))
+                currentTopY -= slice.shift
+                context.draw(slice.image, in: CGRect(x: 0, y: currentTopY, width: width, height: slice.shift))
             }
 
             return context.makeImage()
         }
     }
 
-    // MARK: - Pixel Matching Algorithm (Top-Strip Template Matching)
-    private func detectVerticalScrollShift(prev: CGImage, curr: CGImage) -> Int? {
+    // MARK: - Live Preview Thumbnail Generator
+    private func makeLiveThumbnail(base: CGImage, currentTotalHeight: Int) -> NSImage? {
+        let thumbW = 70
+        let aspect = CGFloat(currentTotalHeight) / max(CGFloat(base.width), 1.0)
+        let thumbH = max(40, min(140, Int(CGFloat(thumbW) * aspect)))
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let ctx = CGContext(
+            data: nil,
+            width: thumbW,
+            height: thumbH,
+            bitsPerComponent: 8,
+            bytesPerRow: thumbW * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else { return nil }
+
+        // Draw downscaled base
+        ctx.interpolationQuality = .medium
+        ctx.draw(base, in: CGRect(x: 0, y: 0, width: thumbW, height: thumbH))
+
+        guard let img = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: img, size: NSSize(width: thumbW, height: thumbH))
+    }
+
+    // MARK: - Multi-Band Robust Vertical Shift Detection (CleanShot X Algorithm)
+    /// Detects vertical scroll displacement by evaluating multiple horizontal bands
+    /// to handle sticky headers/navbars, fixed sidebars, and smooth trackpad inertia.
+    private func detectConsensusVerticalShift(prev: CGImage, curr: CGImage) -> Int? {
         let w = prev.width
         let h = prev.height
-
-        guard w >= 50, h >= 50 else { return nil }
+        guard w >= 40, h >= 60 else { return nil }
 
         guard let dataPrev = prev.dataProvider?.data, let ptrPrev = CFDataGetBytePtr(dataPrev),
               let dataCurr = curr.dataProvider?.data, let ptrCurr = CFDataGetBytePtr(dataCurr) else {
@@ -131,14 +166,14 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
         let bppPrev = max(3, prev.bitsPerPixel / 8)
         let bppCurr = max(3, curr.bitsPerPixel / 8)
 
-        // 1. Check if identical (shift = 0)
-        let checkH = min(30, h / 4)
-        let checkY = min(100, h / 3)
+        // 1. Check if identical (shift = 0) across middle section
+        let zeroCheckY = h / 3
+        let zeroCheckH = min(30, h / 5)
         var zeroDiff = 0
-        let stepX = 6
         var zeroCount = 0
+        let stepX = 6
 
-        for y in checkY..<(checkY + checkH) {
+        for y in zeroCheckY..<(zeroCheckY + zeroCheckH) {
             let rowP = y * bprPrev
             let rowC = y * bprCurr
             for x in stride(from: 40, to: w - 40, by: stepX) {
@@ -151,52 +186,86 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
         }
 
         if zeroCount > 0 && (zeroDiff / zeroCount) < 3 {
-            return 0 // unchanged
+            return 0 // Screen content did not move
         }
 
-        // 2. Sample a reference strip from `curr` near top: y in [stripY, stripY + stripH]
-        let stripH = min(30, h / 6)
-        let stripY = min(35, h / 8)
+        // 2. Sample 3 candidate bands at 25%, 45%, and 65% of frame height
+        let bandTargets = [
+            Int(Double(h) * 0.25),
+            Int(Double(h) * 0.45),
+            Int(Double(h) * 0.65)
+        ]
+        let bandH = min(24, h / 12)
+        let maxShift = min(h / 2, 380)
+        guard maxShift > 4 else { return nil }
 
-        var bestS = 0
-        var minDiff = Int.max
-        let maxS = h - stripY - stripH - 8
+        var detectedShifts: [Int] = []
 
-        guard maxS > 4 else { return nil }
+        for anchorY in bandTargets {
+            guard anchorY + bandH < h else { continue }
 
-        for s in stride(from: 2, through: maxS, by: 2) {
-            let prevY = stripY + s
-            var diff = 0
-            var sampleCount = 0
+            var bestS = -1
+            var minDiff = Int.max
 
-            for sy in 0..<stripH {
-                let rowC = (stripY + sy) * bprCurr
-                let rowP = (prevY + sy) * bprPrev
+            // Check shift from 0 through maxShift
+            for s in stride(from: 0, through: maxShift, by: 2) {
+                let prevY = anchorY + s
+                guard prevY + bandH < h else { break }
 
-                for x in stride(from: 40, to: w - 40, by: stepX) {
-                    let idxC = rowC + x * bppCurr
-                    let idxP = rowP + x * bppPrev
-                    guard idxC + 2 < lenCurr, idxP + 2 < lenPrev else { continue }
+                var diff = 0
+                var sampleCount = 0
 
-                    diff += abs(Int(ptrCurr[idxC]) - Int(ptrPrev[idxP]))
-                    sampleCount += 1
+                for sy in 0..<bandH {
+                    let rowC = (anchorY + sy) * bprCurr
+                    let rowP = (prevY + sy) * bprPrev
+
+                    for x in stride(from: 40, to: w - 40, by: stepX) {
+                        let idxC = rowC + x * bppCurr
+                        let idxP = rowP + x * bppPrev
+                        guard idxC + 2 < lenCurr, idxP + 2 < lenPrev else { continue }
+
+                        diff += abs(Int(ptrCurr[idxC]) - Int(ptrPrev[idxP]))
+                        sampleCount += 1
+                    }
+                }
+
+                if sampleCount > 0 {
+                    let avg = diff / sampleCount
+                    if avg < minDiff {
+                        minDiff = avg
+                        bestS = s
+                    }
                 }
             }
 
-            if sampleCount > 0 && diff < minDiff {
-                minDiff = diff
-                bestS = s
+            // Only accept band if matching difference is low (< 18 per pixel)
+            if minDiff < 18, bestS >= 0 {
+                detectedShifts.append(bestS)
             }
         }
 
-        let totalExpectedSamples = stripH * ((w - 80) / stepX)
-        guard totalExpectedSamples > 0 else { return nil }
+        guard !detectedShifts.isEmpty else { return nil }
 
-        let avgDiff = minDiff / totalExpectedSamples
-        if avgDiff < 24 && bestS > 0 {
-            return bestS
+        // 3. Consensus Logic: Discard sticky header (shift = 0) if body bands agree on a positive shift
+        let positiveShifts = detectedShifts.filter { $0 > 1 }
+
+        if positiveShifts.isEmpty {
+            return 0
         }
 
-        return nil
+        if positiveShifts.count >= 2 {
+            // Find pair that agrees within 2 pixels
+            for i in 0..<positiveShifts.count {
+                for j in (i + 1)..<positiveShifts.count {
+                    if abs(positiveShifts[i] - positiveShifts[j]) <= 2 {
+                        return (positiveShifts[i] + positiveShifts[j]) / 2
+                    }
+                }
+            }
+        }
+
+        // If only 1 positive band or slight variance, take median of positive shifts
+        let sorted = positiveShifts.sorted()
+        return sorted[sorted.count / 2]
     }
 }

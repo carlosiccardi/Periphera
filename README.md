@@ -38,9 +38,10 @@ Even in 2026, macOS still forces a single global toggle for "Natural Scrolling" 
 - **Independent Scroll Directions**: Set **Natural** or **Standard** independently for your Trackpad and external Mouse.
 - **Caffè / Anti-Sleep Mode**: Keep your Mac and display awake (`caffeinate` / `IOPMAssertion`) with customizable duration presets (Indefinite, 15m, 30m, 1h, 2h) and live menu bar indicator.
 - **Draggable Floating Capture Bar (`⌘⇧6` or `⌘⇧P`)**: Clean on-screen palette with keyboard shortcuts that can be dragged anywhere.
-- **Scrolling Screenshot (Screenshot a Scorrimento)**: Stitches continuous images together vertically in real-time as you scroll.
+- **Scrolling Screenshot (CleanShot X-Style)**: Live multi-band stitching engine with real-time HUD preview, sticky header rejection, and interactive pass-through scrolling.
+- **Quick Access Overlay**: Floating preview panel with instant Copy, Finder reveal, and native Drag & Drop directly into Slack, Discord, Mail, Telegram, or Finder.
 - **Screen Video Recording (Registrazione Schermo)**: One-click video recording with a floating timer HUD and automatic save to Desktop.
-- **Instant Area & Fullscreen Screenshots**: Interactive region selection with direct copy to clipboard and Finder reveal.
+- **Instant Area & Fullscreen Screenshots**: Interactive region selection with direct copy to clipboard and Quick Access Overlay.
 - **External Display Brightness Control**: Smoothly adjust the brightness of any connected external monitor (`10%` – `100%`) using hybrid hardware DDC/CI (`IOAVService`) and CoreGraphics LUT scaling.
 - **Zero-Latency Native Engine**: Built on CoreGraphics (`CGEventTap`) in Swift 6; preserves native macOS trackpad inertia, rubber-banding, and swipe gestures.
 - **Pure Menu Bar Agent**: Runs silently in the background (`LSUIElement`) with zero Dock clutter and optional Launch at Login.
