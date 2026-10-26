@@ -63,7 +63,7 @@ final class ScrollingFrameOverlayController {
 
         // --- 2. Create Floating Pill HUD Window (Outside capture area, fully clickable) ---
         let margin: CGFloat = 20
-        let cardW: CGFloat = 490
+        let cardW: CGFloat = 380
         let cardH: CGFloat = 48
         let windowW: CGFloat = cardW + (margin * 2)
         let windowH: CGFloat = cardH + (margin * 2)
@@ -111,8 +111,8 @@ final class ScrollingFrameOverlayController {
         }
         self.pillPanel = pPanel
 
-        // --- 3. Install Global & Local Key Monitors for Enter (Done), Esc (Cancel), and Space (Auto Scroll) ---
-        installKeyMonitors(manager: manager, onDone: onDone, onCancel: onCancel)
+        // --- 3. Install Global & Local Key Monitors for Enter (Done) & Esc (Cancel) ---
+        installKeyMonitors(onDone: onDone, onCancel: onCancel)
     }
 
     func hide() {
@@ -136,7 +136,7 @@ final class ScrollingFrameOverlayController {
         }
     }
 
-    private func installKeyMonitors(manager: ScreenCaptureManager, onDone: @escaping () -> Void, onCancel: @escaping () -> Void) {
+    private func installKeyMonitors(onDone: @escaping () -> Void, onCancel: @escaping () -> Void) {
         removeKeyMonitors()
 
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -148,10 +148,6 @@ final class ScrollingFrameOverlayController {
                 onCancel()
                 return nil
             }
-            if event.keyCode == 49 { // Space: toggle auto scroll
-                manager.toggleAutoScroll()
-                return nil
-            }
             return event
         }
 
@@ -160,8 +156,6 @@ final class ScrollingFrameOverlayController {
                 Task { @MainActor in onDone() }
             } else if event.keyCode == 53 { // Esc
                 Task { @MainActor in onCancel() }
-            } else if event.keyCode == 49 { // Space
-                Task { @MainActor in manager.toggleAutoScroll() }
             }
         }
     }
@@ -246,43 +240,18 @@ private struct ScrollingControlBarView: View {
             }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(manager.isAutoScrolling
-                     ? (isIT ? "Scorrimento in corso..." : "Auto scrolling...")
-                     : (isIT ? "Scorri o premi Auto..." : "Scroll or click Auto..."))
+                Text(isIT ? "Scorri verso il basso..." : "Scroll down slowly...")
                     .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(manager.isAutoScrolling ? Color.orange : Color.primary)
+                    .foregroundStyle(.primary)
 
                 Text(isIT
-                     ? "\(manager.scrollingTotalHeight) px • \(manager.scrollingFramesCount) sezioni"
-                     : "\(manager.scrollingTotalHeight) px • \(manager.scrollingFramesCount) slices")
+                     ? "Altezza: \(manager.scrollingTotalHeight) px • \(manager.scrollingFramesCount) sezioni"
+                     : "Height: \(manager.scrollingTotalHeight) px • \(manager.scrollingFramesCount) slices")
                     .font(.system(size: 9.5, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
-
-            // Auto Scroll Button (Play / Pause)
-            Button {
-                manager.toggleAutoScroll()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: manager.isAutoScrolling ? "pause.fill" : "play.fill")
-                        .font(.system(size: 10, weight: .bold))
-                    Text(manager.isAutoScrolling
-                         ? (isIT ? "Pausa" : "Pause")
-                         : (isIT ? "Auto Scroll" : "Auto Scroll"))
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                .padding(.horizontal, 11)
-                .padding(.vertical, 5.5)
-                .background(
-                    Capsule()
-                        .fill(manager.isAutoScrolling ? Color.orange : Color.primary.opacity(0.10))
-                )
-                .foregroundStyle(manager.isAutoScrolling ? Color.white : Color.primary)
-            }
-            .buttonStyle(.plain)
-            .help(isIT ? "Avvia/Pausa lo scorrimento automatico (Spazio)" : "Start/Pause automatic scrolling (Space)")
 
             // Done Button
             Button(action: onDone) {
@@ -315,7 +284,7 @@ private struct ScrollingControlBarView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .frame(width: 490, height: 48)
+        .frame(width: 380, height: 48)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(.ultraThinMaterial)

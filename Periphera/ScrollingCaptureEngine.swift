@@ -16,11 +16,8 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
     private var currentTotalHeight: Int = 0
     private let queue = DispatchQueue(label: "com.periphera.scrollingStitcher", qos: .userInitiated)
 
-    // Limit max composite height to 35,000px to prevent memory exhaustion
-    private let maxCompositeHeight = 35_000
-
-    // Shifts below 4px are sub-pixel noise and are accumulated into the next frame
-    private let minScrollThreshold = 4
+    // Limit max composite height to 30,000px to prevent memory exhaustion
+    private let maxCompositeHeight = 30_000
 
     nonisolated init() {}
 
@@ -53,13 +50,12 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
                 return (false, currentTotalHeight, nil)
             }
 
-            guard let shift = detectVerticalShift(prev: previous, curr: frame) else {
+            guard let shift = detectConsensusVerticalShift(prev: previous, curr: frame) else {
                 return (false, currentTotalHeight, nil)
             }
 
-            // If shift is below the minimum threshold, wait for content to move further before slicing.
-            // Do NOT update lastCapturedImage so the next frame accumulates the full real displacement.
-            if shift < minScrollThreshold {
+            // If shift is 0 or negligible, user hasn't scrolled; skip frame
+            if shift <= 1 {
                 return (false, currentTotalHeight, nil)
             }
 
@@ -153,106 +149,186 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
         return NSImage(cgImage: img, size: NSSize(width: thumbW, height: thumbH))
     }
 
-    // MARK: - 1D Vertical Profile Waveform Correlation (CleanShot X / Panoramic Alignment)
-    /// Computes a continuous 1D luminance profile across all rows, then correlates the waveforms
-    /// across the full height to determine the exact vertical displacement with 0 pixel error.
-    private func detectVerticalShift(prev: CGImage, curr: CGImage) -> Int? {
+    // MARK: - Multi-Band Robust Vertical Shift Detection (CleanShot X Algorithm)
+    private func detectConsensusVerticalShift(prev: CGImage, curr: CGImage) -> Int? {
         let w = prev.width
         let h = prev.height
-        guard w >= 60, h >= 100 else { return nil }
+        guard w >= 40, h >= 60 else { return nil }
 
-        let pPrev = computeRowProfile(prev)
-        let pCurr = computeRowProfile(curr)
-        guard pPrev.count == h, pCurr.count == h else { return nil }
-
-        // 1. Detect sticky header height on the top (e.g. tabs, URL bar, menu bar that never scroll)
-        var stickyRows = 0
-        let maxStickyCheck = min(350, h / 3)
-        while stickyRows < maxStickyCheck {
-            if abs(pCurr[stickyRows] - pPrev[stickyRows]) < 0.005 {
-                stickyRows += 1
-            } else {
-                break
-            }
-        }
-
-        // Start correlation on the scrollable body content below any sticky elements
-        let startY = stickyRows
-        let maxShift = min(h - startY - 30, 950)
-        guard maxShift >= 0 else { return 0 }
-
-        // 2. Full waveform correlation search across all candidate offsets s in 0...maxShift
-        var bestShift = 0
-        var minDiff = Double.greatestFiniteMagnitude
-
-        for s in 0...maxShift {
-            var diff = 0.0
-            var count = 0
-            // Compare as many rows as possible (up to 800 rows of continuous visual signature)
-            let compareRows = min(800, h - startY - s)
-            guard compareRows >= 40 else { break }
-
-            for y in startY..<(startY + compareRows) {
-                let yP = y + s
-                if yP < h {
-                    diff += abs(pCurr[y] - pPrev[yP])
-                    count += 1
-                }
-            }
-
-            if count > 0 {
-                let avg = diff / Double(count)
-                if avg < minDiff {
-                    minDiff = avg
-                    bestShift = s
-                }
-            }
-        }
-
-        // If even the best match has high difference (> 0.08 average luminance mismatch),
-        // the screen content changed completely or jumped beyond the search window
-        if minDiff > 0.08 {
+        guard let dataPrev = prev.dataProvider?.data, let ptrPrev = CFDataGetBytePtr(dataPrev),
+              let dataCurr = curr.dataProvider?.data, let ptrCurr = CFDataGetBytePtr(dataCurr) else {
             return nil
         }
 
-        return bestShift
-    }
+        let lenPrev = CFDataGetLength(dataPrev)
+        let lenCurr = CFDataGetLength(dataCurr)
+        guard lenPrev > 0, lenCurr > 0 else { return nil }
 
-    /// Computes the horizontal average luminance per row across the middle 70% width
-    private func computeRowProfile(_ image: CGImage) -> [Double] {
-        guard let data = image.dataProvider?.data,
-              let ptr = CFDataGetBytePtr(data) else { return [] }
+        let bprPrev = prev.bytesPerRow
+        let bprCurr = curr.bytesPerRow
+        let bppPrev = max(3, prev.bitsPerPixel / 8)
+        let bppCurr = max(3, curr.bitsPerPixel / 8)
 
-        let len = CFDataGetLength(data)
-        let bpr = image.bytesPerRow
-        let bpp = max(3, image.bitsPerPixel / 8)
-        let h = image.height
-        let w = image.width
+        // 1. Check if completely static (shift = 0) across middle section
+        let zeroCheckY = h / 3
+        let zeroCheckH = min(24, h / 8)
+        var zeroDiff = 0
+        var zeroCount = 0
+        let stepX = 6
 
-        // Sample across the central 70% of the image to ignore sidebars and scrollbars
-        let minX = Int(Double(w) * 0.15)
-        let maxX = Int(Double(w) * 0.85)
-        let stepX = 8
-
-        var profile = [Double](repeating: 0, count: h)
-
-        for y in 0..<h {
-            let row = y * bpr
-            var sum = 0
-            var count = 0
-
-            for x in stride(from: minX, to: maxX, by: stepX) {
-                let idx = row + x * bpp
-                guard idx + 2 < len else { continue }
-                // Standard Rec. 601 Luma
-                let lum = Int(ptr[idx]) * 299 + Int(ptr[idx + 1]) * 587 + Int(ptr[idx + 2]) * 114
-                sum += lum
-                count += 1
+        for y in zeroCheckY..<(zeroCheckY + zeroCheckH) {
+            let rowP = y * bprPrev
+            let rowC = y * bprCurr
+            for x in stride(from: 40, to: w - 40, by: stepX) {
+                let idxP = rowP + x * bppPrev
+                let idxC = rowC + x * bppCurr
+                guard idxP + 2 < lenPrev, idxC + 2 < lenCurr else { continue }
+                zeroDiff += abs(Int(ptrPrev[idxP]) - Int(ptrCurr[idxC]))
+                zeroCount += 1
             }
-
-            profile[y] = count > 0 ? (Double(sum) / Double(count * 1000)) : 0
         }
 
-        return profile
+        if zeroCount > 0 && (zeroDiff / zeroCount) < 3 {
+            return 0 // Screen content did not move
+        }
+
+        // 2. Candidate bands placed in upper 45% of curr image to maximize downward scroll headroom
+        let bandTargets = [
+            max(15, Int(Double(h) * 0.05)),
+            max(30, Int(Double(h) * 0.12)),
+            max(45, Int(Double(h) * 0.20)),
+            max(60, Int(Double(h) * 0.30)),
+            max(75, Int(Double(h) * 0.40))
+        ]
+        let bandH = min(20, max(8, h / 20))
+
+        var detectedShifts: [Int] = []
+
+        for anchorY in bandTargets {
+            guard anchorY + bandH < h else { continue }
+
+            // Check band texture: skip solid white or solid color areas
+            var sampleSamples: [Int] = []
+            let checkRow = (anchorY + bandH / 2) * bprCurr
+            for x in stride(from: 40, to: w - 40, by: stepX * 2) {
+                let idx = checkRow + x * bppCurr
+                if idx < lenCurr {
+                    sampleSamples.append(Int(ptrCurr[idx]))
+                }
+            }
+            if !sampleSamples.isEmpty {
+                let mean = sampleSamples.reduce(0, +) / sampleSamples.count
+                let diffSum = sampleSamples.reduce(0) { $0 + abs($1 - mean) }
+                let variance = diffSum / sampleSamples.count
+                if variance < 4 {
+                    continue // Skip low-texture band (e.g. whitespace)
+                }
+            }
+
+            // Maximum shift this band can search without exceeding prev bounds
+            let maxShiftForBand = min(h - bandH - anchorY, 950)
+            guard maxShiftForBand > 4 else { continue }
+
+            // Phase 1: Coarse search (stride 4)
+            var bestCoarseS = -1
+            var minCoarseDiff = Int.max
+
+            for s in stride(from: 0, through: maxShiftForBand, by: 4) {
+                let prevY = anchorY + s
+                guard prevY + bandH < h else { break }
+
+                var diff = 0
+                var sampleCount = 0
+
+                for sy in stride(from: 0, to: bandH, by: 2) {
+                    let rowC = (anchorY + sy) * bprCurr
+                    let rowP = (prevY + sy) * bprPrev
+
+                    for x in stride(from: 40, to: w - 40, by: stepX) {
+                        let idxC = rowC + x * bppCurr
+                        let idxP = rowP + x * bppPrev
+                        guard idxC + 2 < lenCurr, idxP + 2 < lenPrev else { continue }
+
+                        diff += abs(Int(ptrCurr[idxC]) - Int(ptrPrev[idxP]))
+                        sampleCount += 1
+                    }
+                }
+
+                if sampleCount > 0 {
+                    let avg = diff / sampleCount
+                    if avg < minCoarseDiff {
+                        minCoarseDiff = avg
+                        bestCoarseS = s
+                    }
+                }
+            }
+
+            guard bestCoarseS >= 0, minCoarseDiff < 45 else { continue }
+
+            // Phase 2: Fine search around bestCoarseS (stride 1)
+            let fineStart = max(0, bestCoarseS - 4)
+            let fineEnd = min(maxShiftForBand, bestCoarseS + 4)
+            var bestFineS = bestCoarseS
+            var minFineDiff = minCoarseDiff
+
+            for s in fineStart...fineEnd {
+                let prevY = anchorY + s
+                guard prevY + bandH < h else { break }
+
+                var diff = 0
+                var sampleCount = 0
+
+                for sy in 0..<bandH {
+                    let rowC = (anchorY + sy) * bprCurr
+                    let rowP = (prevY + sy) * bprPrev
+
+                    for x in stride(from: 40, to: w - 40, by: stepX) {
+                        let idxC = rowC + x * bppCurr
+                        let idxP = rowP + x * bppPrev
+                        guard idxC + 2 < lenCurr, idxP + 2 < lenPrev else { continue }
+
+                        diff += abs(Int(ptrCurr[idxC]) - Int(ptrPrev[idxP]))
+                        sampleCount += 1
+                    }
+                }
+
+                if sampleCount > 0 {
+                    let avg = diff / sampleCount
+                    if avg < minFineDiff {
+                        minFineDiff = avg
+                        bestFineS = s
+                    }
+                }
+            }
+
+            // Accept band if pixel difference is within subpixel tolerance (< 42)
+            if minFineDiff < 42 {
+                detectedShifts.append(bestFineS)
+            }
+        }
+
+        guard !detectedShifts.isEmpty else { return nil }
+
+        // 3. Consensus Logic: Discard sticky headers (shift = 0) if body bands agree on positive shift
+        let positiveShifts = detectedShifts.filter { $0 > 1 }
+
+        if positiveShifts.isEmpty {
+            return 0 // All textured bands detected 0 shift
+        }
+
+        // If at least 2 positive bands agree within 2 pixels, return consensus
+        if positiveShifts.count >= 2 {
+            for i in 0..<positiveShifts.count {
+                for j in (i + 1)..<positiveShifts.count {
+                    if abs(positiveShifts[i] - positiveShifts[j]) <= 2 {
+                        return (positiveShifts[i] + positiveShifts[j]) / 2
+                    }
+                }
+            }
+        }
+
+        // If single positive band or slight spread, return median
+        let sorted = positiveShifts.sorted()
+        return sorted[sorted.count / 2]
     }
 }

@@ -19,7 +19,6 @@ final class ScreenCaptureManager {
     var isRecordingVideo: Bool = false
     var recordingSeconds: Int = 0
     var isScrollingCaptureActive: Bool = false
-    var isAutoScrolling: Bool = false
     var scrollingFramesCount: Int = 0
     var scrollingTotalHeight: Int = 0
     var scrollingLiveThumbnail: NSImage?
@@ -32,11 +31,9 @@ final class ScreenCaptureManager {
 
     private let scrollingEngine = ScrollingCaptureEngine()
     private var scrollingTask: Task<Void, Never>?
-    private var autoScrollTask: Task<Void, Never>?
     private var scrollingRect: CGRect?
     private var isITLanguage: Bool = true
     private var recordingHUDWindow: NSWindow?
-    private var consecutiveNoShiftCount: Int = 0
 
     // Fast-path cache for ScreenCaptureKit during active scrolling session
     private var cachedFilter: SCContentFilter?
@@ -182,13 +179,10 @@ final class ScreenCaptureManager {
     func beginScrollingCaptureSession(rect: CGRect, isIT: Bool) {
         CaptureOverlayController.shared.hideImmediately()
 
-        stopAutoScroll()
         scrollingEngine.reset()
         scrollingRect = rect
         isITLanguage = isIT
         isScrollingCaptureActive = true
-        isAutoScrolling = false
-        consecutiveNoShiftCount = 0
         scrollingFramesCount = 1
         scrollingTotalHeight = Int(rect.height)
         scrollingLiveThumbnail = nil
@@ -229,92 +223,17 @@ final class ScreenCaptureManager {
 
         let result = scrollingEngine.processNewFrame(frame)
         if result.didAdd {
-            self.consecutiveNoShiftCount = 0
             self.scrollingFramesCount = self.scrollingEngine.capturedFrameCount
             self.scrollingTotalHeight = result.totalHeight
             if let thumb = result.thumbnail {
                 self.scrollingLiveThumbnail = thumb
             }
-        } else {
-            self.consecutiveNoShiftCount += 1
         }
-    }
-
-    // MARK: - Smooth Auto Scroll Controller
-    func toggleAutoScroll() {
-        if isAutoScrolling {
-            stopAutoScroll()
-        } else {
-            startAutoScroll()
-        }
-    }
-
-    func startAutoScroll() {
-        guard isScrollingCaptureActive, !isAutoScrolling, let rect = scrollingRect else { return }
-        isAutoScrolling = true
-        consecutiveNoShiftCount = 0
-
-        // Target center of capture rectangle so WindowServer delivers scroll directly to the underlying document
-        let targetPoint = CGPoint(x: rect.midX, y: rect.midY)
-
-        // 1. Send Began phase event
-        postAutoScrollEvent(step: 0, phase: 1, at: targetPoint) // Phase 1: Began
-
-        autoScrollTask = Task { @MainActor [weak self] in
-            // Emit continuous linear trackpad gesture events at 60Hz (16.6ms)
-            // 4 pixels every 16.6ms = ~240 px/s (completely smooth, linear, zero jerking/acceleration curve)
-            while let self, self.isScrollingCaptureActive, self.isAutoScrolling {
-                self.postAutoScrollEvent(step: 4, phase: 2, at: targetPoint) // Phase 2: Changed/Moved
-
-                try? await Task.sleep(nanoseconds: 16_666_666) // 60 fps
-                if Task.isCancelled || !self.isAutoScrolling { break }
-
-                // If document reached the end (no new slices added for ~1.5s of scrolling), pause automatically
-                if self.consecutiveNoShiftCount >= 25 {
-                    self.stopAutoScroll()
-                    break
-                }
-            }
-        }
-    }
-
-    func stopAutoScroll() {
-        guard isAutoScrolling || autoScrollTask != nil else { return }
-        autoScrollTask?.cancel()
-        autoScrollTask = nil
-        isAutoScrolling = false
-
-        if let rect = scrollingRect {
-            // 3. Send Ended phase event so Chrome / Safari cleanly finalize the continuous gesture
-            postAutoScrollEvent(step: 0, phase: 4, at: CGPoint(x: rect.midX, y: rect.midY)) // Phase 4: Ended
-        }
-    }
-
-    private func postAutoScrollEvent(step: Int32, phase: UInt32, at point: CGPoint) {
-        // In macOS CoreGraphics pixel units, negative wheel1 moves content UP (scrolls DOWN the page)
-        guard let event = CGEvent(
-            scrollWheelEvent2Source: nil,
-            units: .pixel,
-            wheelCount: 1,
-            wheel1: -step,
-            wheel2: 0,
-            wheel3: 0
-        ) else { return }
-
-        // Continuous trackpad gesture flags: silky-smooth linear scrolling without discrete wheel acceleration steps
-        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
-        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase))
-
-        // Mark event as Periphera internal auto-scroll so ScrollEngine passes it through without inverting
-        event.setIntegerValueField(.eventSourceUserData, value: 0x50455249)
-        event.location = point
-        event.post(tap: .cghidEventTap)
     }
 
     func finishAndStitchScrollingCapture() {
         guard isScrollingCaptureActive else { return }
 
-        stopAutoScroll()
         scrollingTask?.cancel()
         scrollingTask = nil
         isScrollingCaptureActive = false
@@ -349,7 +268,6 @@ final class ScreenCaptureManager {
     }
 
     func cancelScrollingCapture() {
-        stopAutoScroll()
         scrollingTask?.cancel()
         scrollingTask = nil
         isScrollingCaptureActive = false

@@ -103,11 +103,6 @@ private nonisolated func scrollEventTapCallback(
         return Unmanaged.passUnretained(event)
     }
 
-    // Pass through internal Periphera synthetic auto-scroll events untouched
-    if event.getIntegerValueField(.eventSourceUserData) == 0x50455249 {
-        return Unmanaged.passUnretained(event)
-    }
-
     let config = context.currentConfig()
     guard config.isEnabled else {
         return Unmanaged.passUnretained(event)
