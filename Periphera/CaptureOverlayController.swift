@@ -48,24 +48,6 @@ final class CaptureOverlayController {
 
         guard let screen = NSScreen.main else { return }
 
-        let barW: CGFloat = 490
-        let barH: CGFloat = 80
-        let barX = screen.frame.midX - (barW / 2.0)
-        let barY = screen.visibleFrame.minY + 60
-
-        let panel = CaptureToolbarPanel(
-            contentRect: NSRect(x: barX, y: barY, width: barW, height: barH),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.level = .floating
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.isMovableByWindowBackground = true // Native AppKit dragging: 100% crash-proof & smooth
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
         let rootView = CaptureToolbarView(
             isIT: isIT,
             isRecording: ScreenCaptureManager.shared.isRecordingVideo,
@@ -88,6 +70,25 @@ final class CaptureOverlayController {
         )
 
         let hosting = NSHostingView(rootView: rootView)
+        let fitting = hosting.fittingSize
+        let barW: CGFloat = max(660, ceil(fitting.width))
+        let barH: CGFloat = max(90, ceil(fitting.height))
+        let barX = screen.frame.midX - (barW / 2.0)
+        let barY = screen.visibleFrame.minY + 60
+
+        let panel = CaptureToolbarPanel(
+            contentRect: NSRect(x: barX, y: barY, width: barW, height: barH),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .floating
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.isMovableByWindowBackground = true // Native AppKit dragging: 100% crash-proof & smooth
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
         hosting.frame = NSRect(x: 0, y: 0, width: barW, height: barH)
         panel.contentView = hosting
 

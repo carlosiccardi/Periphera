@@ -62,25 +62,25 @@ final class ScrollingFrameOverlayController {
         self.borderPanel = bPanel
 
         // --- 2. Create Floating Pill HUD Window (Outside capture area, fully clickable) ---
-        let pillW: CGFloat = 380
-        let pillH: CGFloat = 54
+        let margin: CGFloat = 20
+        let cardW: CGFloat = 380
+        let cardH: CGFloat = 48
+        let windowW: CGFloat = cardW + (margin * 2)
+        let windowH: CGFloat = cardH + (margin * 2)
 
-        // Position pill bar centered relative to the capture rect, 16pt below it (or bottom of screen)
-        var pillX = rect.midX - (pillW / 2.0)
-        pillX = max(16, min(screen.frame.width - pillW - 16, pillX))
+        // Position pill bar centered relative to the capture rect, below it or at top if near bottom
+        var pillX = rect.midX - (windowW / 2.0)
+        pillX = max(8, min(screen.frame.width - windowW - 8, pillX))
 
         // Convert SwiftUI top-left Y to Cocoa bottom-left Y
-        // SwiftUI: rect.maxY is distance from top of screen
-        // Cocoa: y = screenH - rect.maxY - pillH - 16
-        var pillY = screen.frame.height - rect.maxY - pillH - 16
-        if pillY < 24 {
-            // If rect reaches the bottom of the screen, place pill bar above rect or 24pt from bottom
-            let topY = screen.frame.height - rect.minY + 16
-            pillY = (topY + pillH < screen.frame.height - 30) ? topY : 24
+        var pillY = screen.frame.height - rect.maxY - windowH - 8
+        if pillY < 20 {
+            let topY = screen.frame.height - rect.minY + 8
+            pillY = (topY + windowH < screen.frame.height - 30) ? topY : 20
         }
 
         let pPanel = NonActivatingFloatingPanel(
-            contentRect: NSRect(x: pillX, y: pillY, width: pillW, height: pillH),
+            contentRect: NSRect(x: pillX, y: pillY, width: windowW, height: windowH),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -100,7 +100,7 @@ final class ScrollingFrameOverlayController {
             onCancel: onCancel
         )
         let pillHosting = NSHostingView(rootView: pillView)
-        pillHosting.frame = NSRect(x: 0, y: 0, width: pillW, height: pillH)
+        pillHosting.frame = NSRect(x: 0, y: 0, width: windowW, height: windowH)
         pPanel.contentView = pillHosting
         pPanel.alphaValue = 0
         pPanel.orderFrontRegardless()
@@ -284,6 +284,7 @@ private struct ScrollingControlBarView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+        .frame(width: 380, height: 48)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -292,7 +293,8 @@ private struct ScrollingControlBarView: View {
                         .strokeBorder(Color.white.opacity(0.25), lineWidth: 0.8)
                 )
         )
-        .shadow(color: .black.opacity(0.30), radius: 18, x: 0, y: 8)
-        .frame(width: 380, height: 50)
+        // Soft natural shadow that fades out well within the 20pt window margin
+        .shadow(color: .black.opacity(0.20), radius: 12, x: 0, y: 5)
+        .padding(20)
     }
 }

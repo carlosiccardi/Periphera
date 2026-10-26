@@ -114,8 +114,8 @@ struct CaptureToolbarView: View {
                         .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.8)
                 )
         )
-        .shadow(color: .black.opacity(0.28), radius: 24, x: 0, y: 10)
-        .padding(14)
+        .shadow(color: .black.opacity(0.22), radius: 14, x: 0, y: 6)
+        .padding(20)
     }
 }
 
