@@ -31,6 +31,7 @@ struct PeripheraApp: App {
     @State private var displayManager = DisplayManager()
     @State private var caffeineManager = CaffeineManager.shared
     @State private var captureManager = ScreenCaptureManager.shared
+    @State private var batteryManager = BatteryManager.shared
 
     var body: some Scene {
         MenuBarExtra {
@@ -38,7 +39,8 @@ struct PeripheraApp: App {
                 engine: engine,
                 displayManager: displayManager,
                 caffeineManager: caffeineManager,
-                captureManager: captureManager
+                captureManager: captureManager,
+                batteryManager: batteryManager
             )
         } label: {
             Image(

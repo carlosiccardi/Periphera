@@ -36,13 +36,32 @@ enum DocsPreviewGenerator {
             displayManager: displayManager,
             caffeineManager: caffeineManager,
             captureManager: captureManager,
+            batteryManager: BatteryManager.shared,
             showMouseSpeedTuning: false,
             showTrackpadPreview: false,
-            showMousePreview: false
+            showMousePreview: false,
+            showBatteryDetails: false
         )
         saveRenderedView(
             view: PopoverCardWrapper { minimalView },
             to: docsURL.appendingPathComponent("preview-minimal-v5.png")
+        )
+
+        // 1b. Battery AlDente Expanded View (v5)
+        let batteryExpandedView = ContentView(
+            engine: engine,
+            displayManager: displayManager,
+            caffeineManager: caffeineManager,
+            captureManager: captureManager,
+            batteryManager: BatteryManager.shared,
+            showMouseSpeedTuning: false,
+            showTrackpadPreview: false,
+            showMousePreview: false,
+            showBatteryDetails: true
+        )
+        saveRenderedView(
+            view: PopoverCardWrapper { batteryExpandedView },
+            to: docsURL.appendingPathComponent("preview-battery-aldente-v5.png")
         )
 
         // 2. Interactive Simulator View (v5)
@@ -51,9 +70,11 @@ enum DocsPreviewGenerator {
             displayManager: displayManager,
             caffeineManager: caffeineManager,
             captureManager: captureManager,
+            batteryManager: BatteryManager.shared,
             showMouseSpeedTuning: false,
             showTrackpadPreview: true,
-            showMousePreview: false
+            showMousePreview: false,
+            showBatteryDetails: false
         )
         saveRenderedView(
             view: PopoverCardWrapper { simulatorView },
@@ -78,13 +99,28 @@ enum DocsPreviewGenerator {
     }
 
     private static func saveRenderedView<V: View>(view: V, to url: URL) {
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 2.0
-        guard let nsImage = renderer.nsImage,
-              let tiffData = nsImage.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let pngData = bitmap.representation(using: .png, properties: [:]) else {
-            print("Failed to render \(url.lastPathComponent)")
+        let hostingView = NSHostingView(rootView: view)
+        let fittingSize = hostingView.fittingSize
+        hostingView.frame = NSRect(origin: .zero, size: fittingSize)
+
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: fittingSize),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView = hostingView
+        hostingView.layoutSubtreeIfNeeded()
+
+        guard let bitmap = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
+            print("Failed to cache display for \(url.lastPathComponent)")
+            return
+        }
+        hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+        guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            print("Failed to get PNG data for \(url.lastPathComponent)")
             return
         }
 

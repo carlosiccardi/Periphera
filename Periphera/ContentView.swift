@@ -7,15 +7,18 @@
 
 import SwiftUI
 
+@MainActor
 struct ContentView: View {
     @Bindable var engine: ScrollEngine
     @Bindable var displayManager: DisplayManager
     @Bindable var caffeineManager: CaffeineManager = .shared
     @Bindable var captureManager: ScreenCaptureManager = .shared
+    @Bindable var batteryManager: BatteryManager = .shared
 
     @State private var showMouseSpeedTuning: Bool = false
     @State private var showTrackpadPreview: Bool = false
     @State private var showMousePreview: Bool = false
+    @State private var showBatteryDetails: Bool = false
 
     @MainActor
     init(
@@ -23,17 +26,21 @@ struct ContentView: View {
         displayManager: DisplayManager,
         caffeineManager: CaffeineManager = .shared,
         captureManager: ScreenCaptureManager = .shared,
+        batteryManager: BatteryManager = .shared,
         showMouseSpeedTuning: Bool = false,
         showTrackpadPreview: Bool = false,
-        showMousePreview: Bool = false
+        showMousePreview: Bool = false,
+        showBatteryDetails: Bool = false
     ) {
         self.engine = engine
         self.displayManager = displayManager
         self.caffeineManager = caffeineManager
         self.captureManager = captureManager
+        self.batteryManager = batteryManager
         _showMouseSpeedTuning = State(initialValue: showMouseSpeedTuning)
         _showTrackpadPreview = State(initialValue: showTrackpadPreview)
         _showMousePreview = State(initialValue: showMousePreview)
+        _showBatteryDetails = State(initialValue: showBatteryDetails)
     }
 
     private var isIT: Bool { engine.language == .it }
@@ -81,6 +88,14 @@ struct ContentView: View {
                     displayManager: displayManager,
                     isIT: isIT
                 )
+
+                if batteryManager.hasBattery {
+                    MinimalBatteryRow(
+                        batteryManager: batteryManager,
+                        isIT: isIT,
+                        isExpanded: $showBatteryDetails
+                    )
+                }
             }
 
             Divider()
@@ -94,6 +109,7 @@ struct ContentView: View {
         .animation(.snappy(duration: 0.22), value: showMouseSpeedTuning)
         .animation(.snappy(duration: 0.22), value: showTrackpadPreview)
         .animation(.snappy(duration: 0.22), value: showMousePreview)
+        .animation(.snappy(duration: 0.22), value: showBatteryDetails)
         .animation(.snappy(duration: 0.22), value: caffeineManager.isActive)
         .animation(.snappy(duration: 0.22), value: engine.isAccessibilityGranted)
         .animation(.snappy(duration: 0.18), value: engine.language)
@@ -703,11 +719,285 @@ private struct SegmentPill: View {
     }
 }
 
+// MARK: - Minimal Battery Row (AlDente Style)
+private struct MinimalBatteryRow: View {
+    @Bindable var batteryManager: BatteryManager
+    let isIT: Bool
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header Row: Icon, Title, Badge & Quick Controls
+            HStack(spacing: 7) {
+                Image(systemName: batteryManager.batteryIconName)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(batteryManager.statusColor)
+                    .frame(width: 16)
+
+                HStack(spacing: 4) {
+                    Text(isIT ? "Batteria" : "Battery")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+
+                    Text("AlDente")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1.5)
+                        .background(
+                            Capsule()
+                                .fill(Color.orange.opacity(0.12))
+                        )
+                }
+
+                Spacer()
+
+                // Battery % & Status Badge
+                HStack(spacing: 4) {
+                    Text("\(batteryManager.level)%")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.primary)
+
+                    if batteryManager.isProtectionEnabled && batteryManager.isACConnected && batteryManager.level >= batteryManager.chargeLimit {
+                        Image(systemName: "shield.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Color(red: 0.25, green: 0.78, blue: 0.48))
+                            .help(isIT ? "Batteria protetta da sovratensione" : "Battery protected from overvoltage")
+                    }
+                }
+
+                // Top Up 100% Quick Button
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) {
+                        batteryManager.toggleTopUp()
+                    }
+                } label: {
+                    HStack(spacing: 2.5) {
+                        Image(systemName: batteryManager.isTopUpActive ? "bolt.fill" : "bolt")
+                            .font(.system(size: 8.5, weight: .bold))
+                        Text("100%")
+                            .font(.system(size: 8.5, weight: .semibold))
+                    }
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(batteryManager.isTopUpActive ? Color.blue.opacity(0.2) : Color.primary.opacity(0.06))
+                    )
+                    .foregroundStyle(batteryManager.isTopUpActive ? Color.blue : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(isIT ? "Top Up: Ricarica al 100% per viaggi/mobilità" : "Top Up: Charge to 100% for travel")
+
+                // Expand/Collapse Chevron
+                Button {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(.secondary.opacity(0.7))
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: 14, height: 14)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Charge Limit Slider & Preset Buttons
+            VStack(spacing: 5) {
+                HStack {
+                    Text(isIT ? "Limite di Carica" : "Charge Limit")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Text(batteryManager.isTopUpActive ? "Top Up (100%)" : "\(batteryManager.chargeLimit)%")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(batteryManager.isTopUpActive ? Color.blue : Color.primary)
+                }
+
+                HStack(spacing: 8) {
+                    Slider(
+                        value: Binding(
+                            get: { Double(batteryManager.chargeLimit) },
+                            set: { batteryManager.setLimit(Int($0)) }
+                        ),
+                        in: 60...100,
+                        step: 5
+                    )
+                    .controlSize(.mini)
+                    .tint(batteryManager.isTopUpActive ? .blue : .primary)
+                    .disabled(batteryManager.isTopUpActive)
+
+                    // Quick Preset Buttons: 70%, 80%, 90%
+                    HStack(spacing: 3) {
+                        ForEach([70, 80, 90], id: \.self) { preset in
+                            Button {
+                                batteryManager.setLimit(preset)
+                            } label: {
+                                Text("\(preset)")
+                                    .font(.system(size: 8.5, weight: .semibold))
+                                    .padding(.horizontal, 4.5)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .fill(batteryManager.chargeLimit == preset && !batteryManager.isTopUpActive ? Color.primary.opacity(0.12) : Color.primary.opacity(0.04))
+                                    )
+                                    .foregroundStyle(batteryManager.chargeLimit == preset && !batteryManager.isTopUpActive ? Color.primary : Color.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                // Subtitle Status
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(batteryManager.statusColor)
+                        .frame(width: 4.5, height: 4.5)
+
+                    Text(batteryManager.statusDescription(isIT: isIT))
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // Expandable AlDente Settings & Diagnostics
+            if isExpanded {
+                VStack(spacing: 8) {
+                    Divider()
+                        .opacity(0.3)
+
+                    // Sailing Mode & Heat Protection Toggles
+                    VStack(spacing: 5) {
+                        Toggle(
+                            isIT ? "Veleggiamento (Sailing 5%)" : "Sailing Mode (5% buffer)",
+                            isOn: $batteryManager.isSailingEnabled
+                        )
+                        .font(.system(size: 10, weight: .medium))
+                        .toggleStyle(.checkbox)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(isIT ? "Evita micro-ricariche consentendo alla batteria di oscillare" : "Prevents micro-charging by allowing battery to drift")
+
+                        Toggle(
+                            isIT ? "Protezione Termica (\(Int(batteryManager.maxTempThreshold))°C)" : "Heat Protection (\(Int(batteryManager.maxTempThreshold))°C)",
+                            isOn: $batteryManager.isHeatProtectionEnabled
+                        )
+                        .font(.system(size: 10, weight: .medium))
+                        .toggleStyle(.checkbox)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(isIT ? "Avvisa se la batteria supera la soglia di calore" : "Alerts if battery exceeds heat threshold")
+
+                        Toggle(
+                            isIT ? "Notifica & suono al limite" : "Notify & sound when limit reached",
+                            isOn: $batteryManager.notifyOnLimit
+                        )
+                        .font(.system(size: 10, weight: .medium))
+                        .toggleStyle(.checkbox)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    // Telemetry Diagnostic Tiles
+                    HStack(spacing: 5) {
+                        DiagnosticTile(
+                            title: isIT ? "Salute" : "Health",
+                            value: "\(batteryManager.healthPercentage)%",
+                            subtitle: batteryManager.healthCondition(isIT: isIT)
+                        )
+
+                        DiagnosticTile(
+                            title: isIT ? "Cicli" : "Cycles",
+                            value: "\(batteryManager.cycleCount)",
+                            subtitle: "/ \(batteryManager.maxDesignCycles)"
+                        )
+
+                        DiagnosticTile(
+                            title: isIT ? "Temp." : "Temp.",
+                            value: String(format: "%.1f°", batteryManager.temperatureCelsius),
+                            subtitle: batteryManager.temperatureCelsius < 33 ? (isIT ? "Ottima" : "Cool") : (isIT ? "Calda" : "Warm")
+                        )
+
+                        DiagnosticTile(
+                            title: isIT ? "Potenza" : "Power",
+                            value: String(format: "%.1fW", batteryManager.wattage),
+                            subtitle: batteryManager.isCharging ? (isIT ? "In carica" : "In") : (isIT ? "Assorb." : "Out")
+                        )
+                    }
+
+                    // Hardware Details Footer
+                    if batteryManager.rawMaxCapacity > 0 && batteryManager.designCapacity > 0 {
+                        HStack {
+                            Text(isIT ? "Capacità: \(batteryManager.rawMaxCapacity) / \(batteryManager.designCapacity) mAh" : "Capacity: \(batteryManager.rawMaxCapacity) / \(batteryManager.designCapacity) mAh")
+                                .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                            Spacer()
+                            if !batteryManager.deviceName.isEmpty {
+                                Text(batteryManager.deviceName)
+                                    .font(.system(size: 8.5))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.035))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.8)
+                )
+        )
+    }
+}
+
+// MARK: - Diagnostic Tile
+private struct DiagnosticTile: View {
+    let title: String
+    let value: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(.tertiary)
+
+            Text(value)
+                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(.primary)
+
+            Text(subtitle)
+                .font(.system(size: 7.5, weight: .regular))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+        )
+    }
+}
+
 #Preview {
     ContentView(
         engine: ScrollEngine(),
         displayManager: DisplayManager(),
         caffeineManager: CaffeineManager.shared,
-        captureManager: ScreenCaptureManager.shared
+        captureManager: ScreenCaptureManager.shared,
+        batteryManager: BatteryManager.shared
     )
 }

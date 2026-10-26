@@ -17,12 +17,12 @@
 <div align="center">
   <table>
     <tr>
-      <td align="center"><strong>Minimal View & Header Controls</strong></td>
-      <td align="center"><strong>Interactive <code>(i)</code> Simulator</strong></td>
+      <td align="center"><strong>Minimal Popover & AlDente Battery</strong></td>
+      <td align="center"><strong>AlDente Suite & Hardware Diagnostics</strong></td>
     </tr>
     <tr>
-      <td valign="top"><img src="docs/preview-minimal-v5.png" width="340" alt="Periphera Minimal UI with Caffeine and Capture" /></td>
-      <td valign="top"><img src="docs/preview-simulator-v5.png" width="340" alt="Periphera Interactive Simulator" /></td>
+      <td valign="top"><img src="docs/preview-minimal-v5.png" width="340" alt="Periphera Minimal UI with AlDente Battery" /></td>
+      <td valign="top"><img src="docs/preview-battery-aldente-v5.png" width="340" alt="Periphera AlDente Battery Protection & Diagnostics" /></td>
     </tr>
     <tr>
       <td align="center" colspan="2"><strong>Draggable Floating Capture Palette (<code>⌘⇧6</code> / <code>⌘⇧P</code>)</strong></td>
@@ -31,10 +31,12 @@
       <td align="center" colspan="2"><img src="docs/preview-capture-bar-v5.png" width="620" alt="Floating Capture Bar" /></td>
     </tr>
     <tr>
-      <td align="center" colspan="2"><strong>CleanShot X-Style Quick Access Overlay & Drag & Drop</strong></td>
+      <td align="center"><strong>Interactive <code>(i)</code> Simulator</strong></td>
+      <td align="center"><strong>CleanShot X-Style Quick Access Overlay</strong></td>
     </tr>
     <tr>
-      <td align="center" colspan="2"><img src="docs/preview-quick-access-v5.png" width="280" alt="Quick Access Overlay" /></td>
+      <td valign="top"><img src="docs/preview-simulator-v5.png" width="340" alt="Periphera Interactive Simulator" /></td>
+      <td valign="top"><img src="docs/preview-quick-access-v5.png" width="340" alt="Quick Access Overlay" /></td>
     </tr>
   </table>
 </div>
@@ -48,6 +50,12 @@ Even in 2026, macOS still forces a single global toggle for "Natural Scrolling" 
 ## Features
 
 - **Independent Scroll Directions**: Set **Natural** or **Standard** independently for your Trackpad and external Mouse.
+- **AlDente-Style Battery Management & Charge Protection**:
+  - **Charge Limit (Limite di Carica)**: Set custom limit (60%–100%, presets 70%, 80%, 90%) to preserve lithium-ion battery longevity and stop charging stress on AC power.
+  - **Sailing Mode (Modalità Veleggiamento)**: Prevents continuous micro-cycles by allowing the battery to drift naturally within a 5% buffer before charging resumes.
+  - **Top Up (100%)**: One-click quick override to charge to 100% when preparing for travel or off-desk work.
+  - **Heat Protection (Protezione Termica)**: Continuous temperature monitoring with automatic notifications when battery exceeds safe operating temperatures (36°C).
+  - **Live Hardware Diagnostics**: Real-time battery percentage, calculated health %, cycle count vs design maximum (e.g. `151 / 1000`), battery temperature in °C, live power draw/charging wattage (W), and exact design vs actual mAh capacity.
 - **Caffè / Anti-Sleep Mode**: Keep your Mac and display awake (`caffeinate` / `IOPMAssertion`) with customizable duration presets (Indefinite, 15m, 30m, 1h, 2h) and live menu bar indicator.
 - **Draggable Floating Capture Bar (`⌘⇧6` or `⌘⇧P`)**: Clean on-screen palette with keyboard shortcuts that can be dragged anywhere.
 - **Scrolling Screenshot (CleanShot X-Style)**: Live multi-band stitching engine with real-time HUD preview, sticky header rejection, and interactive pass-through scrolling.
