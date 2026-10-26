@@ -19,6 +19,10 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
     // Limit max composite height to 30,000px to prevent memory exhaustion
     private let maxCompositeHeight = 30_000
 
+    // Minimum scroll shift required to commit a new slice.
+    // Shifts under 6px are sub-pixel font hinting noise and must be accumulated to prevent venetian-blind artifacts.
+    private let minScrollThreshold = 6
+
     nonisolated init() {}
 
     nonisolated func reset() {
@@ -54,8 +58,9 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
                 return (false, currentTotalHeight, nil)
             }
 
-            // If shift is 0 or negligible, user hasn't scrolled; skip frame
-            if shift <= 1 {
+            // If shift is below the minimum threshold, wait for content to move further before slicing.
+            // Do NOT update lastCapturedImage so the next frame accumulates the full real displacement.
+            if shift < minScrollThreshold {
                 return (false, currentTotalHeight, nil)
             }
 
@@ -149,11 +154,11 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
         return NSImage(cgImage: img, size: NSSize(width: thumbW, height: thumbH))
     }
 
-    // MARK: - Multi-Band Robust Vertical Shift Detection (CleanShot X Algorithm)
+    // MARK: - Robust Template-Based Vertical Shift Detection (CleanShot X Algorithm)
     private func detectConsensusVerticalShift(prev: CGImage, curr: CGImage) -> Int? {
         let w = prev.width
         let h = prev.height
-        guard w >= 40, h >= 60 else { return nil }
+        guard w >= 60, h >= 100 else { return nil }
 
         guard let dataPrev = prev.dataProvider?.data, let ptrPrev = CFDataGetBytePtr(dataPrev),
               let dataCurr = curr.dataProvider?.data, let ptrCurr = CFDataGetBytePtr(dataCurr) else {
@@ -169,82 +174,92 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
         let bppPrev = max(3, prev.bitsPerPixel / 8)
         let bppCurr = max(3, curr.bitsPerPixel / 8)
 
-        // 1. Check if completely static (shift = 0) across middle section
-        let zeroCheckY = h / 3
-        let zeroCheckH = min(24, h / 8)
-        var zeroDiff = 0
-        var zeroCount = 0
-        let stepX = 6
+        // Substantial band height (36-50px) to span multiple lines of text and unique features
+        let bandH = min(50, max(32, h / 25))
+        let stepX = 8
 
-        for y in zeroCheckY..<(zeroCheckY + zeroCheckH) {
-            let rowP = y * bprPrev
-            let rowC = y * bprCurr
-            for x in stride(from: 40, to: w - 40, by: stepX) {
-                let idxP = rowP + x * bppPrev
-                let idxC = rowC + x * bppCurr
-                guard idxP + 2 < lenPrev, idxC + 2 < lenCurr else { continue }
-                zeroDiff += abs(Int(ptrPrev[idxP]) - Int(ptrCurr[idxC]))
-                zeroCount += 1
-            }
-        }
+        // Search within the central 70% width to avoid scrollbars and sidebar noise
+        let minX = Int(Double(w) * 0.15)
+        let maxX = Int(Double(w) * 0.85)
 
-        if zeroCount > 0 && (zeroDiff / zeroCount) < 3 {
-            return 0 // Screen content did not move
-        }
-
-        // 2. Candidate bands placed in upper 45% of curr image to maximize downward scroll headroom
+        // 5 candidate anchors placed in the scrollable body (20% to 65% of viewport)
         let bandTargets = [
-            max(15, Int(Double(h) * 0.05)),
-            max(30, Int(Double(h) * 0.12)),
-            max(45, Int(Double(h) * 0.20)),
-            max(60, Int(Double(h) * 0.30)),
-            max(75, Int(Double(h) * 0.40))
+            Int(Double(h) * 0.20),
+            Int(Double(h) * 0.32),
+            Int(Double(h) * 0.44),
+            Int(Double(h) * 0.56),
+            Int(Double(h) * 0.68)
         ]
-        let bandH = min(20, max(8, h / 20))
 
         var detectedShifts: [Int] = []
 
         for anchorY in bandTargets {
             guard anchorY + bandH < h else { continue }
 
-            // Check band texture: skip solid white or solid color areas
-            var sampleSamples: [Int] = []
-            let checkRow = (anchorY + bandH / 2) * bprCurr
-            for x in stride(from: 40, to: w - 40, by: stepX * 2) {
-                let idx = checkRow + x * bppCurr
-                if idx < lenCurr {
-                    sampleSamples.append(Int(ptrCurr[idx]))
+            // 1. Check visual entropy/variance across this band; skip flat white/gray areas
+            var variance = 0
+            var sampleValues: [Int] = []
+            for yOffset in stride(from: 4, to: bandH, by: 12) {
+                let row = (anchorY + yOffset) * bprCurr
+                for x in stride(from: minX, to: maxX, by: stepX * 2) {
+                    let idx = row + x * bppCurr
+                    if idx + 2 < lenCurr {
+                        // Luminance
+                        let lum = (Int(ptrCurr[idx]) * 299 + Int(ptrCurr[idx + 1]) * 587 + Int(ptrCurr[idx + 2]) * 114) / 1000
+                        sampleValues.append(lum)
+                    }
                 }
             }
-            if !sampleSamples.isEmpty {
-                let mean = sampleSamples.reduce(0, +) / sampleSamples.count
-                let diffSum = sampleSamples.reduce(0) { $0 + abs($1 - mean) }
-                let variance = diffSum / sampleSamples.count
-                if variance < 4 {
-                    continue // Skip low-texture band (e.g. whitespace)
+            if !sampleValues.isEmpty {
+                let mean = sampleValues.reduce(0, +) / sampleValues.count
+                let diffSum = sampleValues.reduce(0) { $0 + abs($1 - mean) }
+                variance = diffSum / sampleValues.count
+                if variance < 6 {
+                    continue // Low contrast / plain white whitespace
                 }
             }
 
-            // Maximum shift this band can search without exceeding prev bounds
+            // 2. Check if this band is static (e.g. sticky header, fixed navigation, or paused screen)
+            var zeroDiff = 0
+            var zeroCount = 0
+            for sy in stride(from: 0, to: bandH, by: 4) {
+                let rowC = (anchorY + sy) * bprCurr
+                let rowP = (anchorY + sy) * bprPrev
+                for x in stride(from: minX, to: maxX, by: stepX) {
+                    let idxC = rowC + x * bppCurr
+                    let idxP = rowP + x * bppPrev
+                    guard idxC + 2 < lenCurr, idxP + 2 < lenPrev else { continue }
+                    zeroDiff += abs(Int(ptrCurr[idxC]) - Int(ptrPrev[idxP]))
+                    zeroCount += 1
+                }
+            }
+
+            if zeroCount > 0 && (zeroDiff / zeroCount) < 4 {
+                // This band did not move at all
+                detectedShifts.append(0)
+                continue
+            }
+
+            // 3. For moving bands, search from s = minScrollThreshold through maxShift
             let maxShiftForBand = min(h - bandH - anchorY, 950)
-            guard maxShiftForBand > 4 else { continue }
+            guard maxShiftForBand >= minScrollThreshold else { continue }
 
-            // Phase 1: Coarse search (stride 4)
+            // Phase 1: Coarse search (stride 4) starting at minScrollThreshold (skips subpixel noise 0..5)
             var bestCoarseS = -1
             var minCoarseDiff = Int.max
 
-            for s in stride(from: 0, through: maxShiftForBand, by: 4) {
+            for s in stride(from: minScrollThreshold, through: maxShiftForBand, by: 4) {
                 let prevY = anchorY + s
                 guard prevY + bandH < h else { break }
 
                 var diff = 0
                 var sampleCount = 0
 
-                for sy in stride(from: 0, to: bandH, by: 2) {
+                for sy in stride(from: 0, to: bandH, by: 4) {
                     let rowC = (anchorY + sy) * bprCurr
                     let rowP = (prevY + sy) * bprPrev
 
-                    for x in stride(from: 40, to: w - 40, by: stepX) {
+                    for x in stride(from: minX, to: maxX, by: stepX) {
                         let idxC = rowC + x * bppCurr
                         let idxP = rowP + x * bppPrev
                         guard idxC + 2 < lenCurr, idxP + 2 < lenPrev else { continue }
@@ -263,10 +278,10 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
                 }
             }
 
-            guard bestCoarseS >= 0, minCoarseDiff < 45 else { continue }
+            guard bestCoarseS >= minScrollThreshold, minCoarseDiff < 42 else { continue }
 
             // Phase 2: Fine search around bestCoarseS (stride 1)
-            let fineStart = max(0, bestCoarseS - 4)
+            let fineStart = max(minScrollThreshold, bestCoarseS - 4)
             let fineEnd = min(maxShiftForBand, bestCoarseS + 4)
             var bestFineS = bestCoarseS
             var minFineDiff = minCoarseDiff
@@ -278,11 +293,11 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
                 var diff = 0
                 var sampleCount = 0
 
-                for sy in 0..<bandH {
+                for sy in stride(from: 0, to: bandH, by: 2) {
                     let rowC = (anchorY + sy) * bprCurr
                     let rowP = (prevY + sy) * bprPrev
 
-                    for x in stride(from: 40, to: w - 40, by: stepX) {
+                    for x in stride(from: minX, to: maxX, by: stepX) {
                         let idxC = rowC + x * bppCurr
                         let idxP = rowP + x * bppPrev
                         guard idxC + 2 < lenCurr, idxP + 2 < lenPrev else { continue }
@@ -301,33 +316,33 @@ nonisolated final class ScrollingCaptureEngine: @unchecked Sendable {
                 }
             }
 
-            // Accept band if pixel difference is within subpixel tolerance (< 42)
-            if minFineDiff < 42 {
+            // Accept band if pixel difference satisfies subpixel threshold (< 38)
+            if minFineDiff < 38 {
                 detectedShifts.append(bestFineS)
             }
         }
 
         guard !detectedShifts.isEmpty else { return nil }
 
-        // 3. Consensus Logic: Discard sticky headers (shift = 0) if body bands agree on positive shift
-        let positiveShifts = detectedShifts.filter { $0 > 1 }
+        // Filter out static / sticky elements (shift == 0)
+        let positiveShifts = detectedShifts.filter { $0 >= minScrollThreshold }
 
         if positiveShifts.isEmpty {
-            return 0 // All textured bands detected 0 shift
+            return 0 // The scrollable body did not move
         }
 
-        // If at least 2 positive bands agree within 2 pixels, return consensus
+        // Consensus logic: find pair agreeing within 3 pixels
         if positiveShifts.count >= 2 {
             for i in 0..<positiveShifts.count {
                 for j in (i + 1)..<positiveShifts.count {
-                    if abs(positiveShifts[i] - positiveShifts[j]) <= 2 {
+                    if abs(positiveShifts[i] - positiveShifts[j]) <= 3 {
                         return (positiveShifts[i] + positiveShifts[j]) / 2
                     }
                 }
             }
         }
 
-        // If single positive band or slight spread, return median
+        // If slight variance, take median
         let sorted = positiveShifts.sorted()
         return sorted[sorted.count / 2]
     }
