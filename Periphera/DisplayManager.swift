@@ -38,6 +38,10 @@ struct ExternalDisplayInfo: Identifiable, Equatable, Sendable {
 final class DisplayManager {
     private(set) var externalDisplays: [ExternalDisplayInfo] = []
 
+    func setExternalDisplaysForPreview(_ displays: [ExternalDisplayInfo]) {
+        externalDisplays = displays
+    }
+
     /// Brightness percentage (10% ... 100%)
     var brightness: Double {
         didSet {

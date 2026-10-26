@@ -214,6 +214,10 @@ final class ScrollEngine {
 
     // MARK: - Live Runtime State
     private(set) var isAccessibilityGranted: Bool = false
+
+    func setAccessibilityGrantedForPreview(_ granted: Bool) {
+        isAccessibilityGranted = granted
+    }
     private(set) var isTapActive: Bool = false
     private(set) var systemIsNatural: Bool = true
     private(set) var lastActiveDevice: InputDeviceType? = nil

@@ -17,12 +17,24 @@
 <div align="center">
   <table>
     <tr>
-      <td align="center"><strong>Minimal View</strong></td>
+      <td align="center"><strong>Minimal View & Header Controls</strong></td>
       <td align="center"><strong>Interactive <code>(i)</code> Simulator</strong></td>
     </tr>
     <tr>
-      <td valign="top"><img src="docs/preview-minimal-v4.png" width="340" alt="Periphera Minimal UI" /></td>
-      <td valign="top"><img src="docs/preview-simulator-v4.png" width="340" alt="Periphera Interactive Simulator" /></td>
+      <td valign="top"><img src="docs/preview-minimal-v5.png" width="340" alt="Periphera Minimal UI with Caffeine and Capture" /></td>
+      <td valign="top"><img src="docs/preview-simulator-v5.png" width="340" alt="Periphera Interactive Simulator" /></td>
+    </tr>
+    <tr>
+      <td align="center" colspan="2"><strong>Draggable Floating Capture Palette (<code>⌘⇧6</code> / <code>⌘⇧P</code>)</strong></td>
+    </tr>
+    <tr>
+      <td align="center" colspan="2"><img src="docs/preview-capture-bar-v5.png" width="620" alt="Floating Capture Bar" /></td>
+    </tr>
+    <tr>
+      <td align="center" colspan="2"><strong>CleanShot X-Style Quick Access Overlay & Drag & Drop</strong></td>
+    </tr>
+    <tr>
+      <td align="center" colspan="2"><img src="docs/preview-quick-access-v5.png" width="280" alt="Quick Access Overlay" /></td>
     </tr>
   </table>
 </div>

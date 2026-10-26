@@ -17,6 +17,25 @@ struct ContentView: View {
     @State private var showTrackpadPreview: Bool = false
     @State private var showMousePreview: Bool = false
 
+    @MainActor
+    init(
+        engine: ScrollEngine,
+        displayManager: DisplayManager,
+        caffeineManager: CaffeineManager = .shared,
+        captureManager: ScreenCaptureManager = .shared,
+        showMouseSpeedTuning: Bool = false,
+        showTrackpadPreview: Bool = false,
+        showMousePreview: Bool = false
+    ) {
+        self.engine = engine
+        self.displayManager = displayManager
+        self.caffeineManager = caffeineManager
+        self.captureManager = captureManager
+        _showMouseSpeedTuning = State(initialValue: showMouseSpeedTuning)
+        _showTrackpadPreview = State(initialValue: showTrackpadPreview)
+        _showMousePreview = State(initialValue: showMousePreview)
+    }
+
     private var isIT: Bool { engine.language == .it }
 
     var body: some View {

@@ -10,6 +10,12 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--generate-previews") {
+            DocsPreviewGenerator.generateAll()
+            NSApp.terminate(nil)
+            return
+        }
+
         // Ensure the app never appears in the Dock or Cmd+Tab app switcher
         NSApp.setActivationPolicy(.accessory)
 
