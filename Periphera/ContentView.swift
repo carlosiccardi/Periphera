@@ -748,6 +748,13 @@ private struct MinimalBatteryRow: View {
                             Capsule()
                                 .fill(Color.orange.opacity(0.12))
                         )
+
+                    if batteryManager.isHardwareHelperInstalled {
+                        Image(systemName: "checkmark.shield.fill")
+                            .font(.system(size: 8.5))
+                            .foregroundStyle(Color(red: 0.25, green: 0.78, blue: 0.48))
+                            .help(isIT ? "Controllo hardware SMC attivo" : "Hardware SMC control active")
+                    }
                 }
 
                 Spacer()
@@ -891,7 +898,9 @@ private struct MinimalBatteryRow: View {
                     Spacer()
 
                     Button {
-                        batteryManager.installHardwareHelper()
+                        _ = withAnimation(.snappy(duration: 0.22)) {
+                            batteryManager.installHardwareHelper()
+                        }
                     } label: {
                         Text(isIT ? "Abilita" : "Enable")
                             .font(.system(size: 9.5, weight: .bold))

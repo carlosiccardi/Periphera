@@ -194,7 +194,7 @@ final class BatteryManager {
     }
 
     func checkHardwareControlInstalled() {
-        let helperPath = "/Library/Application Support/Periphera/smc"
+        let helperPath = "/usr/local/bin/periphera-smc"
         guard FileManager.default.fileExists(atPath: helperPath) else {
             isHardwareHelperInstalled = false
             return
@@ -202,7 +202,7 @@ final class BatteryManager {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        process.arguments = ["-n", helperPath, "-k", smcSupportsTahoe ? "CHTE" : "CH0B", "-r"]
+        process.arguments = ["-n", helperPath, "-v"]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -214,13 +214,14 @@ final class BatteryManager {
             isHardwareHelperInstalled = false
         }
 
+        detectSMCKeys()
         queryHardwareChargingBlockedStatus()
     }
 
     private func queryHardwareChargingBlockedStatus() {
         if smcSupportsTahoe {
             if let out = readSMCKey("CHTE") {
-                isHardwareChargingBlocked = out.contains("01 00 00 00") || out.contains(" 1 (")
+                isHardwareChargingBlocked = out.contains("01 00 00 00") || out.contains(" 1 (") || out.contains("16777216")
             }
         } else if smcSupportsLegacy {
             if let out = readSMCKey("CH0B") {
@@ -230,7 +231,7 @@ final class BatteryManager {
     }
 
     private func getUsableSMCPath() -> String? {
-        let installed = "/Library/Application Support/Periphera/smc"
+        let installed = "/usr/local/bin/periphera-smc"
         if FileManager.default.fileExists(atPath: installed) {
             return installed
         }
@@ -261,27 +262,25 @@ final class BatteryManager {
         guard let bundledSMC = Bundle.main.path(forResource: "smc", ofType: nil) else {
             return false
         }
-        let helperPath = "/Library/Application Support/Periphera/smc"
+        let helperPath = "/usr/local/bin/periphera-smc"
         let sudoersPath = "/private/etc/sudoers.d/periphera"
 
-        let cmd = "mkdir -p '/Library/Application Support/Periphera' && cp '\(bundledSMC)' '\(helperPath)' && chmod 755 '\(helperPath)' && chown -R root:wheel '/Library/Application Support/Periphera' && echo '%admin ALL=(ALL) NOPASSWD: \(helperPath)' > '\(sudoersPath)' && chmod 440 '\(sudoersPath)'"
+        let cmd = "mkdir -p /usr/local/bin && cp '\(bundledSMC)' '\(helperPath)' && chmod 4755 '\(helperPath)' && chown root:wheel '\(helperPath)' && echo 'ALL ALL = NOPASSWD: \(helperPath)' > '\(sudoersPath)' && chmod 440 '\(sudoersPath)'"
 
         let appleScript = NSAppleScript(source: "do shell script \"\(cmd)\" with administrator privileges")
         var error: NSDictionary?
         appleScript?.executeAndReturnError(&error)
 
-        if error == nil {
-            checkHardwareControlInstalled()
-            applyHardwareChargingState()
-            return isHardwareHelperInstalled
-        }
-        return false
+        checkHardwareControlInstalled()
+        applyHardwareChargingState()
+        refreshTelemetry()
+        return isHardwareHelperInstalled
     }
 
     @discardableResult
     func uninstallHardwareHelper() -> Bool {
         enableHardwareCharging()
-        let helperPath = "/Library/Application Support/Periphera/smc"
+        let helperPath = "/usr/local/bin/periphera-smc"
         let sudoersPath = "/private/etc/sudoers.d/periphera"
         let cmd = "rm -f '\(helperPath)' '\(sudoersPath)'"
         let appleScript = NSAppleScript(source: "do shell script \"\(cmd)\" with administrator privileges")
@@ -293,7 +292,7 @@ final class BatteryManager {
 
     // MARK: - Hardware Charging Execution (SMC Write)
     private func runPrivilegedSMC(_ args: [String]) {
-        let helperPath = "/Library/Application Support/Periphera/smc"
+        let helperPath = "/usr/local/bin/periphera-smc"
         guard FileManager.default.fileExists(atPath: helperPath) else { return }
 
         let process = Process()
@@ -312,6 +311,9 @@ final class BatteryManager {
         guard isHardwareHelperInstalled else { return }
         if smcSupportsTahoe {
             runPrivilegedSMC(["-k", "CHTE", "-w", "01000000"])
+            if level > chargeLimit && isSailingEnabled {
+                runPrivilegedSMC(["-k", "CHIE", "-w", "08"])
+            }
         } else if smcSupportsLegacy {
             runPrivilegedSMC(["-k", "CH0B", "-w", "02"])
             runPrivilegedSMC(["-k", "CH0C", "-w", "02"])
@@ -322,6 +324,7 @@ final class BatteryManager {
     func enableHardwareCharging() {
         guard isHardwareHelperInstalled else { return }
         if smcSupportsTahoe {
+            runPrivilegedSMC(["-k", "CHIE", "-w", "00"])
             runPrivilegedSMC(["-k", "CHTE", "-w", "00000000"])
         } else if smcSupportsLegacy {
             runPrivilegedSMC(["-k", "CH0B", "-w", "00"])
