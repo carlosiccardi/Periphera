@@ -35,30 +35,40 @@ final class BatteryManager {
     var deviceName: String = ""
     var serialNumber: String = ""
 
+    // MARK: - Hardware Charge Inhibit State (Physical SMC Control)
+    var isHardwareHelperInstalled: Bool = false
+    var isHardwareChargingBlocked: Bool = false
+    var smcSupportsTahoe: Bool = false
+    var smcSupportsLegacy: Bool = false
+
     // MARK: - AlDente Protection Settings (Persisted in UserDefaults)
     var isProtectionEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isProtectionEnabled, forKey: "batteryProtectionEnabled")
+            applyHardwareChargingState()
         }
     }
 
     var chargeLimit: Int {
         didSet {
-            let clamped = min(max(chargeLimit, 60), 100)
+            let clamped = Swift.min(Swift.max(chargeLimit, 60), 100)
             if clamped != chargeLimit { chargeLimit = clamped }
             UserDefaults.standard.set(chargeLimit, forKey: "batteryChargeLimit")
+            applyHardwareChargingState()
         }
     }
 
     var isSailingEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isSailingEnabled, forKey: "batterySailingEnabled")
+            applyHardwareChargingState()
         }
     }
 
     var sailingDiff: Int {
         didSet {
             UserDefaults.standard.set(sailingDiff, forKey: "batterySailingDiff")
+            applyHardwareChargingState()
         }
     }
 
@@ -87,7 +97,11 @@ final class BatteryManager {
     }
 
     // Temporary 1-click Top Up (charges to 100% when traveling)
-    var isTopUpActive: Bool = false
+    var isTopUpActive: Bool = false {
+        didSet {
+            applyHardwareChargingState()
+        }
+    }
 
     // State tracking for notifications to avoid spamming
     private var hasNotifiedForCurrentLimit: Bool = false
@@ -96,7 +110,6 @@ final class BatteryManager {
     private var timer: Timer?
 
     private init() {
-        // Load defaults or registered settings
         let defaults = UserDefaults.standard
         if defaults.object(forKey: "batteryProtectionEnabled") == nil {
             defaults.set(true, forKey: "batteryProtectionEnabled")
@@ -126,20 +139,22 @@ final class BatteryManager {
         self.isProtectionEnabled = defaults.bool(forKey: "batteryProtectionEnabled")
         self.chargeLimit = defaults.integer(forKey: "batteryChargeLimit")
         self.isSailingEnabled = defaults.bool(forKey: "batterySailingEnabled")
-        self.sailingDiff = max(defaults.integer(forKey: "batterySailingDiff"), 2)
+        self.sailingDiff = Swift.max(defaults.integer(forKey: "batterySailingDiff"), 2)
         self.isHeatProtectionEnabled = defaults.bool(forKey: "batteryHeatProtectionEnabled")
         self.maxTempThreshold = defaults.double(forKey: "batteryMaxTempThreshold")
         self.notifyOnLimit = defaults.bool(forKey: "batteryNotifyOnLimit")
         self.soundAlert = defaults.bool(forKey: "batterySoundAlert")
 
+        detectSMCKeys()
+        checkHardwareControlInstalled()
         refreshTelemetry()
+        applyHardwareChargingState()
         startMonitoring()
         requestNotificationPermission()
     }
 
     // MARK: - Monitoring Lifecycle
     func startMonitoring() {
-        // 1. Hardware IOPS run loop observer
         let context = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         if let runLoopSource = IOPSNotificationCreateRunLoopSource({ info in
             guard let info = info else { return }
@@ -152,7 +167,6 @@ final class BatteryManager {
             CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         }
 
-        // 2. Periodic polling timer for temperature, wattage, and smooth UI updates
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -170,9 +184,187 @@ final class BatteryManager {
         timer = nil
     }
 
+    // MARK: - SMC Key Support & Hardware Helper Check
+    func detectSMCKeys() {
+        if let out = readSMCKey("CHTE"), !out.contains("no data") && !out.contains("Error") {
+            smcSupportsTahoe = true
+        } else if let out = readSMCKey("CH0B"), !out.contains("no data") && !out.contains("Error") {
+            smcSupportsLegacy = true
+        }
+    }
+
+    func checkHardwareControlInstalled() {
+        let helperPath = "/Library/Application Support/Periphera/smc"
+        guard FileManager.default.fileExists(atPath: helperPath) else {
+            isHardwareHelperInstalled = false
+            return
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        process.arguments = ["-n", helperPath, "-k", smcSupportsTahoe ? "CHTE" : "CH0B", "-r"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do {
+            try process.run()
+            process.waitUntilExit()
+            isHardwareHelperInstalled = (process.terminationStatus == 0)
+        } catch {
+            isHardwareHelperInstalled = false
+        }
+
+        queryHardwareChargingBlockedStatus()
+    }
+
+    private func queryHardwareChargingBlockedStatus() {
+        if smcSupportsTahoe {
+            if let out = readSMCKey("CHTE") {
+                isHardwareChargingBlocked = out.contains("01 00 00 00") || out.contains(" 1 (")
+            }
+        } else if smcSupportsLegacy {
+            if let out = readSMCKey("CH0B") {
+                isHardwareChargingBlocked = out.contains("02") || out.contains(" 2 (")
+            }
+        }
+    }
+
+    private func getUsableSMCPath() -> String? {
+        let installed = "/Library/Application Support/Periphera/smc"
+        if FileManager.default.fileExists(atPath: installed) {
+            return installed
+        }
+        return Bundle.main.path(forResource: "smc", ofType: nil)
+    }
+
+    private func readSMCKey(_ key: String) -> String? {
+        guard let path = getUsableSMCPath() else { return nil }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = ["-k", key, "-r"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - Privileged Hardware Helper Installation
+    @discardableResult
+    func installHardwareHelper() -> Bool {
+        guard let bundledSMC = Bundle.main.path(forResource: "smc", ofType: nil) else {
+            return false
+        }
+        let helperPath = "/Library/Application Support/Periphera/smc"
+        let sudoersPath = "/private/etc/sudoers.d/periphera"
+
+        let cmd = "mkdir -p '/Library/Application Support/Periphera' && cp '\(bundledSMC)' '\(helperPath)' && chmod 755 '\(helperPath)' && chown -R root:wheel '/Library/Application Support/Periphera' && echo '%admin ALL=(ALL) NOPASSWD: \(helperPath)' > '\(sudoersPath)' && chmod 440 '\(sudoersPath)'"
+
+        let appleScript = NSAppleScript(source: "do shell script \"\(cmd)\" with administrator privileges")
+        var error: NSDictionary?
+        appleScript?.executeAndReturnError(&error)
+
+        if error == nil {
+            checkHardwareControlInstalled()
+            applyHardwareChargingState()
+            return isHardwareHelperInstalled
+        }
+        return false
+    }
+
+    @discardableResult
+    func uninstallHardwareHelper() -> Bool {
+        enableHardwareCharging()
+        let helperPath = "/Library/Application Support/Periphera/smc"
+        let sudoersPath = "/private/etc/sudoers.d/periphera"
+        let cmd = "rm -f '\(helperPath)' '\(sudoersPath)'"
+        let appleScript = NSAppleScript(source: "do shell script \"\(cmd)\" with administrator privileges")
+        var error: NSDictionary?
+        appleScript?.executeAndReturnError(&error)
+        checkHardwareControlInstalled()
+        return !isHardwareHelperInstalled
+    }
+
+    // MARK: - Hardware Charging Execution (SMC Write)
+    private func runPrivilegedSMC(_ args: [String]) {
+        let helperPath = "/Library/Application Support/Periphera/smc"
+        guard FileManager.default.fileExists(atPath: helperPath) else { return }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        var fullArgs = ["-n", helperPath]
+        fullArgs.append(contentsOf: args)
+        process.arguments = fullArgs
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try? process.run()
+        process.waitUntilExit()
+    }
+
+    func disableHardwareCharging() {
+        guard isHardwareHelperInstalled else { return }
+        if smcSupportsTahoe {
+            runPrivilegedSMC(["-k", "CHTE", "-w", "01000000"])
+        } else if smcSupportsLegacy {
+            runPrivilegedSMC(["-k", "CH0B", "-w", "02"])
+            runPrivilegedSMC(["-k", "CH0C", "-w", "02"])
+        }
+        isHardwareChargingBlocked = true
+    }
+
+    func enableHardwareCharging() {
+        guard isHardwareHelperInstalled else { return }
+        if smcSupportsTahoe {
+            runPrivilegedSMC(["-k", "CHTE", "-w", "00000000"])
+        } else if smcSupportsLegacy {
+            runPrivilegedSMC(["-k", "CH0B", "-w", "00"])
+            runPrivilegedSMC(["-k", "CH0C", "-w", "00"])
+        }
+        isHardwareChargingBlocked = false
+    }
+
+    // MARK: - Hardware Charging State Evaluator
+    func applyHardwareChargingState() {
+        guard hasBattery && isHardwareHelperInstalled else { return }
+
+        let shouldBlock: Bool
+        if !isProtectionEnabled || isTopUpActive {
+            shouldBlock = false
+        } else if isACConnected {
+            if level >= chargeLimit {
+                shouldBlock = true
+            } else if isSailingEnabled {
+                if isHardwareChargingBlocked {
+                    let resumeThreshold = Swift.max(chargeLimit - sailingDiff, 20)
+                    shouldBlock = (level > resumeThreshold)
+                } else {
+                    shouldBlock = false
+                }
+            } else {
+                shouldBlock = false
+            }
+        } else {
+            shouldBlock = false
+        }
+
+        if shouldBlock != isHardwareChargingBlocked {
+            if shouldBlock {
+                disableHardwareCharging()
+            } else {
+                enableHardwareCharging()
+            }
+        }
+    }
+
     // MARK: - Telemetry Refresh via IOKit & AppleSmartBattery
     func refreshTelemetry() {
-        // 1. Basic power source information
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef] else {
             hasBattery = false
@@ -208,7 +400,6 @@ final class BatteryManager {
         }
         self.hasBattery = foundBattery
 
-        // 2. Detailed AppleSmartBattery properties
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
         if service != 0 {
             var props: Unmanaged<CFMutableDictionary>?
@@ -221,7 +412,7 @@ final class BatteryManager {
                 if let design = dict["DesignCapacity"] as? Int, design > 0 {
                     self.designCapacity = design
                     if self.rawMaxCapacity > 0 {
-                        self.healthPercentage = min(max((self.rawMaxCapacity * 100) / design, 1), 100)
+                        self.healthPercentage = Swift.min(Swift.max((self.rawMaxCapacity * 100) / design, 1), 100)
                     }
                 }
                 if let cycles = dict["CycleCount"] as? Int {
@@ -237,7 +428,6 @@ final class BatteryManager {
                     self.voltageMilliVolts = volt
                 }
                 if let rawAmp = dict["Amperage"] as? Int64 {
-                    // Sign-extend 32/64-bit amperage
                     let amp = Int(rawAmp)
                     self.amperageMilliAmps = amp
                     let powerW = (Double(self.voltageMilliVolts) * Double(abs(amp))) / 1_000_000.0
@@ -253,8 +443,9 @@ final class BatteryManager {
             IOObjectRelease(service)
         }
 
-        // 3. Process protection logic and alerts
         evaluateProtectionState()
+        applyHardwareChargingState()
+        queryHardwareChargingBlockedStatus()
     }
 
     // MARK: - Protection Logic & Smart Alerts
@@ -274,7 +465,6 @@ final class BatteryManager {
                 dispatchLimitReachedAlert(limit: effectiveLimit)
             }
         } else if level < effectiveLimit - 2 {
-            // Reset trigger when level drops noticeably below threshold
             hasNotifiedForCurrentLimit = false
         }
 
@@ -305,6 +495,8 @@ final class BatteryManager {
         content.title = "Periphera • Limite di Carica Raggiunto"
         if isTopUpActive {
             content.body = "Ricarica al 100% completata. Top Up terminato."
+        } else if isHardwareHelperInstalled {
+            content.body = "La batteria ha raggiunto il \(limit)%. Ricarica hardware interrotta fisicamente per preservare le celle."
         } else {
             content.body = "La batteria ha raggiunto il \(limit)%. Modalità salvaguardia attiva per prevenire il deterioramento cellulare."
         }
@@ -344,12 +536,14 @@ final class BatteryManager {
         if isTopUpActive {
             hasNotifiedForCurrentLimit = false
         }
+        applyHardwareChargingState()
         refreshTelemetry()
     }
 
     func setLimit(_ newLimit: Int) {
         chargeLimit = newLimit
         hasNotifiedForCurrentLimit = false
+        applyHardwareChargingState()
         refreshTelemetry()
     }
 
@@ -364,6 +558,9 @@ final class BatteryManager {
         }
 
         if isProtectionEnabled && isACConnected {
+            if isHardwareChargingBlocked {
+                return isIT ? "Ricarica interrotta (Hardware) • Limite \(chargeLimit)%" : "Charging halted (Hardware) • Limit \(chargeLimit)%"
+            }
             if level >= chargeLimit {
                 return isIT ? "Limite \(chargeLimit)% raggiunto • Batteria protetta" : "Limit \(chargeLimit)% reached • Battery protected"
             }
@@ -395,6 +592,9 @@ final class BatteryManager {
     }
 
     var batteryIconName: String {
+        if isHardwareChargingBlocked {
+            return "pause.fill"
+        }
         if isCharging || (isACConnected && level < chargeLimit) {
             return "bolt.batteryblock.fill"
         }
@@ -412,7 +612,7 @@ final class BatteryManager {
         if isTopUpActive {
             return .blue
         }
-        if isProtectionEnabled && isACConnected && level >= chargeLimit {
+        if isHardwareChargingBlocked || (isProtectionEnabled && isACConnected && level >= chargeLimit) {
             return Color(red: 0.25, green: 0.78, blue: 0.48)
         }
         if isCharging {

@@ -758,7 +758,12 @@ private struct MinimalBatteryRow: View {
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(.primary)
 
-                    if batteryManager.isProtectionEnabled && batteryManager.isACConnected && batteryManager.level >= batteryManager.chargeLimit {
+                    if batteryManager.isHardwareChargingBlocked {
+                        Image(systemName: "pause.circle.fill")
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(Color(red: 0.25, green: 0.78, blue: 0.48))
+                            .help(isIT ? "Ricarica arrestata fisicamente (Hardware)" : "Charging physically halted (Hardware)")
+                    } else if batteryManager.isProtectionEnabled && batteryManager.isACConnected && batteryManager.level >= batteryManager.chargeLimit {
                         Image(systemName: "shield.fill")
                             .font(.system(size: 9))
                             .foregroundStyle(Color(red: 0.25, green: 0.78, blue: 0.48))
@@ -866,11 +871,76 @@ private struct MinimalBatteryRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            // Hardware Helper Install Notice if not yet installed
+            if !batteryManager.isHardwareHelperInstalled {
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.shield.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.orange)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(isIT ? "Blocco Ricarica Fisico" : "Physical Charge Halt")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.primary)
+
+                        Text(isIT ? "Installa l'helper per arrestare la carica al limite" : "Install helper to halt charge at limit")
+                            .font(.system(size: 8.5))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        batteryManager.installHardwareHelper()
+                    } label: {
+                        Text(isIT ? "Abilita" : "Enable")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule().fill(Color.orange.opacity(0.18))
+                            )
+                            .foregroundStyle(Color.orange)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(7)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.orange.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .strokeBorder(Color.orange.opacity(0.20), lineWidth: 0.8)
+                        )
+                )
+            }
+
             // Expandable AlDente Settings & Diagnostics
             if isExpanded {
                 VStack(spacing: 8) {
                     Divider()
                         .opacity(0.3)
+
+                    // Hardware Helper Status in Expanded View
+                    if batteryManager.isHardwareHelperInstalled {
+                        HStack {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.shield.fill")
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(Color(red: 0.25, green: 0.78, blue: 0.48))
+                                Text(isIT ? "Blocco Hardware SMC attivo" : "SMC Hardware Halt active")
+                                    .font(.system(size: 9.5, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button(isIT ? "Disinstalla helper" : "Uninstall helper") {
+                                batteryManager.uninstallHardwareHelper()
+                            }
+                            .font(.system(size: 8.5))
+                            .foregroundStyle(.tertiary)
+                            .buttonStyle(.plain)
+                        }
+                    }
 
                     // Sailing Mode & Heat Protection Toggles
                     VStack(spacing: 5) {

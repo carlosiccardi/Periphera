@@ -22,6 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Register global shortcuts: ⌘ + ⇧ + 6 and ⌘ + ⇧ + P
         GlobalHotKeyManager.shared.registerDefaultHotKeys()
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        BatteryManager.shared.enableHardwareCharging()
+    }
 }
 
 @main
