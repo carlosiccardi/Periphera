@@ -84,18 +84,9 @@ struct ContentView: View {
                     mouseTuningSection
                 }
 
-                MinimalDisplayRow(
-                    displayManager: displayManager,
-                    isIT: isIT
-                )
+                otherSectionHeader
 
-                if batteryManager.hasBattery {
-                    MinimalBatteryRow(
-                        batteryManager: batteryManager,
-                        isIT: isIT,
-                        isExpanded: $showBatteryDetails
-                    )
-                }
+                otherCard
             }
 
             Divider()
@@ -104,7 +95,7 @@ struct ContentView: View {
             footerBar
         }
         .padding(14)
-        .frame(width: 288)
+        .frame(width: 286)
         .animation(.snappy(duration: 0.22), value: engine.isEnabled)
         .animation(.snappy(duration: 0.22), value: showMouseSpeedTuning)
         .animation(.snappy(duration: 0.22), value: showTrackpadPreview)
@@ -115,76 +106,121 @@ struct ContentView: View {
         .animation(.snappy(duration: 0.18), value: engine.language)
     }
 
-    // MARK: - Compact Header with Quick Caffè & Capture Action Icons
+    // MARK: - Penpot Header: Icon, Title & Switch Toggle
     private var headerBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "slider.horizontal.2.square")
-                .font(.system(size: 13.5, weight: .semibold))
-                .foregroundStyle(engine.isEnabled ? .primary : .tertiary)
-                .frame(width: 26, height: 26)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.primary.opacity(0.07))
-                )
+                .font(.system(size: 13, weight: .light))
+                .foregroundStyle(.white.opacity(0.9))
 
-            HStack(spacing: 6) {
-                Text("Periphera")
-                    .font(.system(size: 13.5, weight: .semibold))
-                    .tracking(-0.2)
-
-                Circle()
-                    .fill(statusDotColor)
-                    .frame(width: 5.5, height: 5.5)
-            }
+            Text("Periphera")
+                .font(.system(size: 14.5, weight: .regular))
+                .foregroundStyle(.white)
+                .tracking(-0.1)
 
             Spacer()
 
-            // 1. Icona Caffè: al tocco cambia colore (arancione attivo, spento inattivo)
-            Button {
-                withAnimation(.snappy(duration: 0.18)) {
-                    caffeineManager.toggle()
-                }
-            } label: {
-                Image(systemName: "cup.and.saucer.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(caffeineManager.isActive ? Color.orange : Color.secondary.opacity(0.65))
-                    .frame(width: 24, height: 24)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(caffeineManager.isActive ? Color.orange.opacity(0.14) : Color.primary.opacity(0.04))
-                    )
-            }
-            .buttonStyle(.plain)
-            .help(isIT ? (caffeineManager.isActive ? "Caffè attivo (anti-sospensione)" : "Attiva Caffè") : (caffeineManager.isActive ? "Caffeine active (keep awake)" : "Activate Caffeine"))
-
-            // 2. Icona Cattura Schermo: al tocco apre la barra flottante trascinabile
-            Button {
-                CaptureOverlayController.shared.toggle(isIT: isIT)
-            } label: {
-                Image(systemName: "camera.viewfinder")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(CaptureOverlayController.shared.isVisible ? Color.primary : Color.secondary.opacity(0.65))
-                    .frame(width: 24, height: 24)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(CaptureOverlayController.shared.isVisible ? Color.primary.opacity(0.12) : Color.primary.opacity(0.04))
-                    )
-            }
-            .buttonStyle(.plain)
-            .help(isIT ? "Apri barra screenshot & video (⌘⇧6)" : "Open screenshot & video bar (⌘⇧6)")
-
-            // 3. Switch On/Off generale
             Toggle("", isOn: $engine.isEnabled)
                 .toggleStyle(.switch)
                 .labelsHidden()
                 .controlSize(.mini)
         }
+        .padding(.horizontal, 2)
     }
 
-    private var statusDotColor: Color {
-        if !engine.isAccessibilityGranted { return .orange }
-        if !engine.isEnabled { return .secondary.opacity(0.4) }
-        return Color(red: 0.25, green: 0.78, blue: 0.48)
+    // MARK: - Penpot "Other" Section Header
+    private var otherSectionHeader: some View {
+        HStack(spacing: 7) {
+            Text(isIT ? "Altro" : "Other")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(.white.opacity(0.92))
+
+            Spacer()
+        }
+        .padding(.horizontal, 2)
+        .padding(.top, 4)
+    }
+
+    // MARK: - Penpot "Other" Card (Display, Battery, Coffee & Capture)
+    private var otherCard: some View {
+        VStack(spacing: 8) {
+            MinimalDisplayRow(
+                displayManager: displayManager,
+                isIT: isIT
+            )
+
+            if batteryManager.hasBattery {
+                MinimalBatteryRow(
+                    batteryManager: batteryManager,
+                    isIT: isIT,
+                    isExpanded: $showBatteryDetails
+                )
+            }
+
+            // Quick Actions: Coffee & Capture Side-by-Side Pill Buttons
+            HStack(spacing: 8) {
+                // Coffee Button
+                Button {
+                    withAnimation(.snappy(duration: 0.18)) {
+                        caffeineManager.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: caffeineManager.isActive ? "cup.and.saucer.fill" : "cup.and.saucer")
+                            .font(.system(size: 11.5, weight: .light))
+                        Text(isIT ? "Caffè" : "Coffee")
+                            .font(.system(size: 11.5, weight: .regular))
+                    }
+                    .foregroundStyle(caffeineManager.isActive ? Color.orange : .white.opacity(0.9))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8.5, style: .continuous)
+                            .fill(caffeineManager.isActive ? Color.orange.opacity(0.18) : Color(red: 0.11, green: 0.11, blue: 0.11).opacity(0.25))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8.5, style: .continuous)
+                                    .strokeBorder(caffeineManager.isActive ? Color.orange.opacity(0.35) : Color.white.opacity(0.06), lineWidth: 0.6)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .help(isIT ? (caffeineManager.isActive ? "Caffè attivo (anti-sospensione)" : "Attiva Caffè") : (caffeineManager.isActive ? "Caffeine active (keep awake)" : "Activate Caffeine"))
+
+                // Capture Button
+                Button {
+                    CaptureOverlayController.shared.toggle(isIT: isIT)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "viewfinder")
+                            .font(.system(size: 11.5, weight: .light))
+                        Text(isIT ? "Cattura" : "Capture")
+                            .font(.system(size: 11.5, weight: .regular))
+                    }
+                    .foregroundStyle(CaptureOverlayController.shared.isVisible ? Color.blue : .white.opacity(0.9))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8.5, style: .continuous)
+                            .fill(CaptureOverlayController.shared.isVisible ? Color.blue.opacity(0.20) : Color(red: 0.11, green: 0.11, blue: 0.11).opacity(0.25))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8.5, style: .continuous)
+                                    .strokeBorder(CaptureOverlayController.shared.isVisible ? Color.blue.opacity(0.35) : Color.white.opacity(0.06), lineWidth: 0.6)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .help(isIT ? "Apri barra screenshot & video (⌘⇧6)" : "Open screenshot & video bar (⌘⇧6)")
+            }
+        }
+        .padding(9)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(red: 0.11, green: 0.11, blue: 0.11).opacity(0.35))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.8)
+                )
+        )
     }
 
     // MARK: - Minimal Permission Notice
@@ -195,7 +231,7 @@ struct ContentView: View {
                 .foregroundStyle(.orange)
 
             Text(isIT ? "Richiesto accesso Accessibilità" : "Accessibility access required")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(.secondary)
 
             Spacer()
@@ -204,7 +240,7 @@ struct ContentView: View {
                 engine.requestAccessibilityPermission()
             }
             .buttonStyle(.plain)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: 11, weight: .regular))
             .padding(.horizontal, 8)
             .padding(.vertical, 3.5)
             .background(
@@ -229,15 +265,15 @@ struct ContentView: View {
         VStack(spacing: 7) {
             HStack {
                 Text(isIT ? "Velocità rotella" : "Wheel speed")
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(.system(size: 10.5, weight: .regular))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(String(format: "%.1fx", engine.mouseSpeedMultiplier))
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .foregroundStyle(.primary.opacity(0.8))
             }
 
-            Slider(value: $engine.mouseSpeedMultiplier, in: 0.5...2.5, step: 0.1)
+            Slider(value: $engine.mouseSpeedMultiplier, in: 0.5...2.5)
                 .controlSize(.mini)
                 .tint(.primary)
 
@@ -261,19 +297,19 @@ struct ContentView: View {
         )
     }
 
-    // MARK: - Minimal Footer
+    // MARK: - Penpot Minimal Footer
     private var footerBar: some View {
         HStack(spacing: 8) {
             Button {
                 engine.toggleLaunchAtLogin()
             } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: engine.launchAtLogin ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 11))
-                        .foregroundStyle(engine.launchAtLogin ? .primary : .tertiary)
+                    Image(systemName: engine.launchAtLogin ? "checkmark.circle" : "circle")
+                        .font(.system(size: 11, weight: .light))
+                        .foregroundStyle(.white.opacity(0.8))
                     Text(isIT ? "Avvia al login" : "Launch at login")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11.5, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.65))
                 }
             }
             .buttonStyle(.plain)
@@ -285,13 +321,13 @@ struct ContentView: View {
                 engine.language = (engine.language == .it) ? .en : .it
             } label: {
                 Text(engine.language.rawValue)
-                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 5.5)
-                    .padding(.vertical, 2.5)
+                    .font(.system(size: 9, weight: .regular, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 4.5, style: .continuous)
-                            .fill(Color.primary.opacity(0.06))
+                            .fill(Color.white.opacity(0.06))
                     )
             }
             .buttonStyle(.plain)
@@ -301,78 +337,67 @@ struct ContentView: View {
                 NSApplication.shared.terminate(nil)
             }
             .buttonStyle(.plain)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
+            .font(.system(size: 11.5, weight: .regular))
+            .foregroundStyle(.white.opacity(0.65))
         }
+        .padding(.horizontal, 2)
     }
 }
 
-// MARK: - Minimal External Display Brightness Row
+// MARK: - Minimal External Display Brightness Row (Penpot Style)
 private struct MinimalDisplayRow: View {
     @Bindable var displayManager: DisplayManager
     let isIT: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 Image(systemName: "display")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12.5, weight: .light))
+                    .foregroundStyle(.white.opacity(0.85))
                     .frame(width: 16)
 
                 Text(isIT ? "Monitor" : "Display")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
-
-                if let name = displayManager.primaryExternalName {
-                    Text(name)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.92))
 
                 Spacer()
 
-                if displayManager.hasExternalDisplay {
-                    Text("\(Int(displayManager.brightness.rounded()))%")
-                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(isIT ? "Non connesso" : "Not connected")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                }
+                Text(displayManager.hasExternalDisplay ? (isIT ? "Connesso" : "Connected") : (isIT ? "Non connesso" : "Not connected"))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .fixedSize(horizontal: true, vertical: false)
             }
 
             HStack(spacing: 8) {
                 Image(systemName: "sun.min")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 10.5, weight: .light))
+                    .foregroundStyle(.white.opacity(0.40))
 
-                Slider(value: $displayManager.brightness, in: 10...100, step: 1)
+                Slider(value: $displayManager.brightness, in: 10...100)
                     .controlSize(.mini)
-                    .tint(.primary)
+                    .tint(.white.opacity(0.9))
                     .disabled(!displayManager.hasExternalDisplay)
 
                 Image(systemName: "sun.max.fill")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .light))
+                    .foregroundStyle(.white.opacity(0.40))
             }
         }
-        .padding(10)
+        .padding(9)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.035))
+            RoundedRectangle(cornerRadius: 9.5, style: .continuous)
+                .fill(Color(red: 0.11, green: 0.11, blue: 0.11).opacity(0.22))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.8)
+                    RoundedRectangle(cornerRadius: 9.5, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.05), lineWidth: 0.6)
                 )
         )
-        .opacity(displayManager.hasExternalDisplay ? 1.0 : 0.5)
+        .opacity(displayManager.hasExternalDisplay ? 1.0 : 0.6)
     }
 }
 
-// MARK: - Device Row with Expandable (i) Simulator & Optional Inline Settings
+// MARK: - Device Row with Expandable (i) Simulator & Optional Inline Settings (Penpot Style)
 private struct MinimalDeviceRow<ExtraContent: View>: View {
     let title: String
     let icon: String
@@ -422,17 +447,17 @@ private struct MinimalDeviceRow<ExtraContent: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
                 Image(systemName: icon)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12.5, weight: .light))
+                    .foregroundStyle(.white.opacity(0.85))
                     .frame(width: 16)
 
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.92))
 
                 if isActiveNow {
                     Circle()
-                        .fill(Color.primary.opacity(0.65))
+                        .fill(Color.white.opacity(0.75))
                         .frame(width: 4.5, height: 4.5)
                         .transition(.opacity)
                 }
@@ -445,9 +470,9 @@ private struct MinimalDeviceRow<ExtraContent: View>: View {
                             isSettingsExpanded.toggle()
                         }
                     } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 11.5, weight: .regular))
-                            .foregroundStyle(isSettingsExpanded ? .primary : .tertiary)
+                        Image(systemName: isSettingsExpanded ? "gearshape.fill" : "gearshape")
+                            .font(.system(size: 11.5, weight: .light))
+                            .foregroundStyle(isSettingsExpanded ? .white : .white.opacity(0.45))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -460,15 +485,15 @@ private struct MinimalDeviceRow<ExtraContent: View>: View {
                     }
                 } label: {
                     Image(systemName: showInfoPreview ? "info.circle.fill" : "info.circle")
-                        .font(.system(size: 12.5, weight: .regular))
-                        .foregroundStyle(showInfoPreview ? .primary : .tertiary)
+                        .font(.system(size: 11.5, weight: .light))
+                        .foregroundStyle(showInfoPreview ? .white : .white.opacity(0.45))
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .help(isIT ? "Mostra simulazione scorrimento" : "Show scroll simulation")
             }
 
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 SegmentPill(
                     label: naturalLabel,
                     isSelected: isNatural
@@ -487,10 +512,10 @@ private struct MinimalDeviceRow<ExtraContent: View>: View {
                     }
                 }
             }
-            .padding(3)
+            .padding(2.5)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color(red: 0.11, green: 0.11, blue: 0.11).opacity(0.25))
             )
 
             if isSettingsExpanded {
@@ -510,10 +535,10 @@ private struct MinimalDeviceRow<ExtraContent: View>: View {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.035))
+                .fill(Color(red: 0.11, green: 0.11, blue: 0.11).opacity(0.35))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(isActiveNow ? 0.18 : 0.06), lineWidth: 0.8)
+                        .strokeBorder(Color.white.opacity(isActiveNow ? 0.22 : 0.06), lineWidth: 0.8)
                 )
         )
         .opacity(isEnabled ? 1.0 : 0.5)
@@ -563,13 +588,13 @@ private struct ScrollSimulationPreview: View {
                 }
 
                 Text(gestureCaption)
-                    .font(.system(size: 9.5, weight: .medium))
+                    .font(.system(size: 9.5, weight: .regular))
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
 
             Image(systemName: "arrow.right")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 10, weight: .regular))
                 .foregroundStyle(.tertiary)
                 .offset(y: -7)
 
@@ -577,7 +602,7 @@ private struct ScrollSimulationPreview: View {
                 simulatedPage
 
                 Text(pageCaption)
-                    .font(.system(size: 9.5, weight: .medium))
+                    .font(.system(size: 9.5, weight: .regular))
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -697,19 +722,15 @@ private struct SegmentPill: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? .primary : .secondary)
+                .font(.system(size: 11.5, weight: .regular))
+                .foregroundStyle(isSelected ? .white : .white.opacity(0.65))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4.5)
                 .background(
                     Group {
                         if isSelected {
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.primary.opacity(0.12))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
-                                )
+                                .fill(Color(red: 0.694, green: 0.698, blue: 0.710).opacity(0.35))
                         }
                     }
                 )
@@ -719,271 +740,80 @@ private struct SegmentPill: View {
     }
 }
 
-// MARK: - Minimal Battery Row (AlDente Style)
+// MARK: - Minimal Battery Row (Penpot & AlDente Style)
 private struct MinimalBatteryRow: View {
     @Bindable var batteryManager: BatteryManager
     let isIT: Bool
     @Binding var isExpanded: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header Row: Icon, Title, Badge & Quick Controls
+        VStack(alignment: .leading, spacing: 6) {
+            // Header Row: Icon, Title & % (Penpot Style)
             HStack(spacing: 7) {
-                Image(systemName: batteryManager.batteryIconName)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(batteryManager.statusColor)
-                    .frame(width: 16)
-
-                HStack(spacing: 4) {
-                    Text(isIT ? "Batteria" : "Battery")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.primary)
-
-                    Text("AlDente")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1.5)
-                        .background(
-                            Capsule()
-                                .fill(Color.orange.opacity(0.12))
-                        )
-
-                    if batteryManager.isHardwareHelperInstalled {
-                        Image(systemName: "checkmark.shield.fill")
-                            .font(.system(size: 8.5))
-                            .foregroundStyle(Color(red: 0.25, green: 0.78, blue: 0.48))
-                            .help(isIT ? "Controllo hardware SMC attivo" : "Hardware SMC control active")
+                // Dynamic Battery Icon: Clean battery when limit reached/blocked, Bolt when charging/below limit
+                Group {
+                    if batteryManager.isChargingTowardsLimit {
+                        // Battery with bolt (actively charging towards limit)
+                        Image(systemName: "battery.100percent.bolt")
+                            .font(.system(size: 12.5, weight: .light))
+                    } else {
+                        // Clean, serene battery outline (limit reached or discharging)
+                        Image(systemName: "battery.100")
+                            .font(.system(size: 12.5, weight: .light))
                     }
                 }
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 16)
+
+                Text(isIT ? "Batteria" : "Battery")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.92))
 
                 Spacer()
 
-                // Battery % & Status Badge
-                HStack(spacing: 4) {
-                    Text("\(batteryManager.level)%")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.primary)
+                // Battery Set Charge Limit % (Penpot Style)
+                Text("\(batteryManager.chargeLimit)%")
+                    .font(.system(size: 11.5, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .fixedSize(horizontal: true, vertical: false)
 
-                    if batteryManager.isHardwareChargingBlocked {
-                        Image(systemName: "pause.circle.fill")
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(Color(red: 0.25, green: 0.78, blue: 0.48))
-                            .help(isIT ? "Ricarica arrestata fisicamente (Hardware)" : "Charging physically halted (Hardware)")
-                    } else if batteryManager.isProtectionEnabled && batteryManager.isACConnected && batteryManager.level >= batteryManager.chargeLimit {
-                        Image(systemName: "shield.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(Color(red: 0.25, green: 0.78, blue: 0.48))
-                            .help(isIT ? "Batteria protetta da sovratensione" : "Battery protected from overvoltage")
-                    }
-                }
-
-                // Top Up 100% Quick Button
-                Button {
-                    withAnimation(.snappy(duration: 0.2)) {
-                        batteryManager.toggleTopUp()
-                    }
-                } label: {
-                    HStack(spacing: 2.5) {
-                        Image(systemName: batteryManager.isTopUpActive ? "bolt.fill" : "bolt")
-                            .font(.system(size: 8.5, weight: .bold))
-                        Text("100%")
-                            .font(.system(size: 8.5, weight: .semibold))
-                    }
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill(batteryManager.isTopUpActive ? Color.blue.opacity(0.2) : Color.primary.opacity(0.06))
-                    )
-                    .foregroundStyle(batteryManager.isTopUpActive ? Color.blue : Color.secondary)
-                }
-                .buttonStyle(.plain)
-                .help(isIT ? "Top Up: Ricarica al 100% per viaggi/mobilità" : "Top Up: Charge to 100% for travel")
-
-                // Expand/Collapse Chevron
+                // Expand/Collapse Chevron for AlDente Details
                 Button {
                     withAnimation(.snappy(duration: 0.22)) {
                         isExpanded.toggle()
                     }
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9.5, weight: .bold))
-                        .foregroundStyle(.secondary.opacity(0.7))
+                        .font(.system(size: 8.5, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.45))
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .frame(width: 14, height: 14)
                 }
                 .buttonStyle(.plain)
+                .help(isIT ? "Mostra/nascondi diagnostica" : "Show/hide diagnostics")
             }
 
-            // Charge Limit Slider & Preset Buttons
-            VStack(spacing: 5) {
-                HStack {
-                    Text(isIT ? "Limite di Carica" : "Charge Limit")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
-
-                    Spacer()
-
-                    Text(batteryManager.isTopUpActive ? "Top Up (100%)" : "\(batteryManager.chargeLimit)%")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(batteryManager.isTopUpActive ? Color.blue : Color.primary)
-                }
-
-                HStack(spacing: 8) {
-                    Slider(
-                        value: Binding(
-                            get: { Double(batteryManager.chargeLimit) },
-                            set: { batteryManager.setLimit(Int($0)) }
-                        ),
-                        in: 60...100,
-                        step: 5
-                    )
-                    .controlSize(.mini)
-                    .tint(batteryManager.isTopUpActive ? .blue : .primary)
-                    .disabled(batteryManager.isTopUpActive)
-
-                    // Quick Preset Buttons: 70%, 80%, 90%
-                    HStack(spacing: 3) {
-                        ForEach([70, 80, 90], id: \.self) { preset in
-                            Button {
-                                batteryManager.setLimit(preset)
-                            } label: {
-                                Text("\(preset)")
-                                    .font(.system(size: 8.5, weight: .semibold))
-                                    .padding(.horizontal, 4.5)
-                                    .padding(.vertical, 2)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .fill(batteryManager.chargeLimit == preset && !batteryManager.isTopUpActive ? Color.primary.opacity(0.12) : Color.primary.opacity(0.04))
-                                    )
-                                    .foregroundStyle(batteryManager.chargeLimit == preset && !batteryManager.isTopUpActive ? Color.primary : Color.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-
-                // Subtitle Status
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(batteryManager.statusColor)
-                        .frame(width: 4.5, height: 4.5)
-
-                    Text(batteryManager.statusDescription(isIT: isIT))
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // Hardware Helper Install Notice if not yet installed
-            if !batteryManager.isHardwareHelperInstalled {
-                HStack(spacing: 8) {
-                    Image(systemName: "bolt.shield.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.orange)
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(isIT ? "Blocco Ricarica Fisico" : "Physical Charge Halt")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.primary)
-
-                        Text(isIT ? "Installa l'helper per arrestare la carica al limite" : "Install helper to halt charge at limit")
-                            .font(.system(size: 8.5))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Button {
-                        _ = withAnimation(.snappy(duration: 0.22)) {
-                            batteryManager.installHardwareHelper()
-                        }
-                    } label: {
-                        Text(isIT ? "Abilita" : "Enable")
-                            .font(.system(size: 9.5, weight: .bold))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(
-                                Capsule().fill(Color.orange.opacity(0.18))
-                            )
-                            .foregroundStyle(Color.orange)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(7)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.orange.opacity(0.08))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(Color.orange.opacity(0.20), lineWidth: 0.8)
-                        )
+            // Charge Limit Slider (Penpot Style)
+            HStack(spacing: 8) {
+                Slider(
+                    value: Binding(
+                        get: { Double(batteryManager.chargeLimit) },
+                        set: { batteryManager.setLimit(Int(round($0 / 5.0) * 5.0)) }
+                    ),
+                    in: 60...100
                 )
+                .controlSize(.mini)
+                .tint(.white.opacity(0.9))
+                .disabled(batteryManager.isTopUpActive)
             }
 
-            // Expandable AlDente Settings & Diagnostics
+            // Expandable Diagnostics: ONLY Health, Cycles, Temp, Power
             if isExpanded {
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     Divider()
-                        .opacity(0.3)
+                        .opacity(0.2)
 
-                    // Hardware Helper Status in Expanded View
-                    if batteryManager.isHardwareHelperInstalled {
-                        HStack {
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark.shield.fill")
-                                    .font(.system(size: 9.5))
-                                    .foregroundStyle(Color(red: 0.25, green: 0.78, blue: 0.48))
-                                Text(isIT ? "Blocco Hardware SMC attivo" : "SMC Hardware Halt active")
-                                    .font(.system(size: 9.5, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button(isIT ? "Disinstalla helper" : "Uninstall helper") {
-                                batteryManager.uninstallHardwareHelper()
-                            }
-                            .font(.system(size: 8.5))
-                            .foregroundStyle(.tertiary)
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    // Sailing Mode & Heat Protection Toggles
-                    VStack(spacing: 5) {
-                        Toggle(
-                            isIT ? "Veleggiamento (Sailing 5%)" : "Sailing Mode (5% buffer)",
-                            isOn: $batteryManager.isSailingEnabled
-                        )
-                        .font(.system(size: 10, weight: .medium))
-                        .toggleStyle(.checkbox)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .help(isIT ? "Evita micro-ricariche consentendo alla batteria di oscillare" : "Prevents micro-charging by allowing battery to drift")
-
-                        Toggle(
-                            isIT ? "Protezione Termica (\(Int(batteryManager.maxTempThreshold))°C)" : "Heat Protection (\(Int(batteryManager.maxTempThreshold))°C)",
-                            isOn: $batteryManager.isHeatProtectionEnabled
-                        )
-                        .font(.system(size: 10, weight: .medium))
-                        .toggleStyle(.checkbox)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .help(isIT ? "Avvisa se la batteria supera la soglia di calore" : "Alerts if battery exceeds heat threshold")
-
-                        Toggle(
-                            isIT ? "Notifica & suono al limite" : "Notify & sound when limit reached",
-                            isOn: $batteryManager.notifyOnLimit
-                        )
-                        .font(.system(size: 10, weight: .medium))
-                        .toggleStyle(.checkbox)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    // Telemetry Diagnostic Tiles
+                    // Telemetry Diagnostic Tiles: Health, Cycles, Temp, Power
                     HStack(spacing: 5) {
                         DiagnosticTile(
                             title: isIT ? "Salute" : "Health",
@@ -1009,32 +839,17 @@ private struct MinimalBatteryRow: View {
                             subtitle: batteryManager.isCharging ? (isIT ? "In carica" : "In") : (isIT ? "Assorb." : "Out")
                         )
                     }
-
-                    // Hardware Details Footer
-                    if batteryManager.rawMaxCapacity > 0 && batteryManager.designCapacity > 0 {
-                        HStack {
-                            Text(isIT ? "Capacità: \(batteryManager.rawMaxCapacity) / \(batteryManager.designCapacity) mAh" : "Capacity: \(batteryManager.rawMaxCapacity) / \(batteryManager.designCapacity) mAh")
-                                .font(.system(size: 8.5, weight: .medium, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                            Spacer()
-                            if !batteryManager.deviceName.isEmpty {
-                                Text(batteryManager.deviceName)
-                                    .font(.system(size: 8.5))
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
                 }
                 .padding(.top, 2)
             }
         }
-        .padding(10)
+        .padding(9)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.035))
+            RoundedRectangle(cornerRadius: 9.5, style: .continuous)
+                .fill(Color(red: 0.11, green: 0.11, blue: 0.11).opacity(0.22))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.8)
+                    RoundedRectangle(cornerRadius: 9.5, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.05), lineWidth: 0.6)
                 )
         )
     }
@@ -1049,24 +864,24 @@ private struct DiagnosticTile: View {
     var body: some View {
         VStack(spacing: 2) {
             Text(title)
-                .font(.system(size: 8, weight: .medium))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 8.5, weight: .regular))
+                .foregroundStyle(.white.opacity(0.55))
 
             Text(value)
-                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(.primary)
+                .font(.system(size: 9.5, weight: .regular))
+                .foregroundStyle(.white)
 
             Text(subtitle)
                 .font(.system(size: 7.5, weight: .regular))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.45))
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
         .padding(.horizontal, 2)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
+                .fill(Color.white.opacity(0.04))
         )
     }
 }

@@ -40,6 +40,15 @@ final class BatteryManager {
     var isHardwareChargingBlocked: Bool = false
     var smcSupportsTahoe: Bool = false
     var smcSupportsLegacy: Bool = false
+    var smcSupportsIntelBCLM: Bool = false
+
+    var isLimitReachedOrBlocked: Bool {
+        isHardwareChargingBlocked || (isProtectionEnabled && isACConnected && level >= chargeLimit)
+    }
+
+    var isChargingTowardsLimit: Bool {
+        isCharging || (isACConnected && level < chargeLimit)
+    }
 
     // MARK: - AlDente Protection Settings (Persisted in UserDefaults)
     var isProtectionEnabled: Bool {
@@ -190,6 +199,8 @@ final class BatteryManager {
             smcSupportsTahoe = true
         } else if let out = readSMCKey("CH0B"), !out.contains("no data") && !out.contains("Error") {
             smcSupportsLegacy = true
+        } else if let out = readSMCKey("BCLM"), !out.contains("no data") && !out.contains("Error") {
+            smcSupportsIntelBCLM = true
         }
     }
 
@@ -226,6 +237,10 @@ final class BatteryManager {
         } else if smcSupportsLegacy {
             if let out = readSMCKey("CH0B") {
                 isHardwareChargingBlocked = out.contains("02") || out.contains(" 2 (")
+            }
+        } else if smcSupportsIntelBCLM {
+            if let out = readSMCKey("BCLM") {
+                isHardwareChargingBlocked = !out.contains(" 100 (") && !out.contains(" 64 (")
             }
         }
     }
@@ -295,16 +310,25 @@ final class BatteryManager {
         let helperPath = "/usr/local/bin/periphera-smc"
         guard FileManager.default.fileExists(atPath: helperPath) else { return }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        // 1. Try direct invocation first (helper has chmod 4755 suid root)
+        let directProcess = Process()
+        directProcess.executableURL = URL(fileURLWithPath: helperPath)
+        directProcess.arguments = args
+        try? directProcess.run()
+        directProcess.waitUntilExit()
+
+        if directProcess.terminationStatus == 0 {
+            return
+        }
+
+        // 2. Fallback to passwordless sudo
+        let sudoProcess = Process()
+        sudoProcess.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
         var fullArgs = ["-n", helperPath]
         fullArgs.append(contentsOf: args)
-        process.arguments = fullArgs
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try? process.run()
-        process.waitUntilExit()
+        sudoProcess.arguments = fullArgs
+        try? sudoProcess.run()
+        sudoProcess.waitUntilExit()
     }
 
     func disableHardwareCharging() {
@@ -317,6 +341,9 @@ final class BatteryManager {
         } else if smcSupportsLegacy {
             runPrivilegedSMC(["-k", "CH0B", "-w", "02"])
             runPrivilegedSMC(["-k", "CH0C", "-w", "02"])
+        } else if smcSupportsIntelBCLM {
+            let hex = String(format: "%02x", chargeLimit)
+            runPrivilegedSMC(["-k", "BCLM", "-w", hex])
         }
         isHardwareChargingBlocked = true
     }
@@ -329,6 +356,8 @@ final class BatteryManager {
         } else if smcSupportsLegacy {
             runPrivilegedSMC(["-k", "CH0B", "-w", "00"])
             runPrivilegedSMC(["-k", "CH0C", "-w", "00"])
+        } else if smcSupportsIntelBCLM {
+            runPrivilegedSMC(["-k", "BCLM", "-w", "64"]) // 100 in hex
         }
         isHardwareChargingBlocked = false
     }
